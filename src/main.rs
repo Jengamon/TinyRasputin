@@ -29,6 +29,6 @@ fn main() -> std::io::Result<()> {
 
     println!("Connecting to {}:{}...", host, port);
     // Change the bot type here, and as long as it implements Default, it'll be built
-    let bot: TestBot = Default::default();
+    let bot: Lesson1Bot = Default::default();
     Runner::run_bot(bot, (host.parse::<Ipv4Addr>().expect("Expected IPv4 address for host"), port))
 }
