@@ -1,7 +1,7 @@
 use super::super::skeleton::{
     bot::PokerBot,
     actions::{Action, ActionType},
-    states::{STARTING_STACK, GameState, RoundState, TerminalState}
+    states::{STARTING_STACK, GameState, RoundState, TerminalState},
 };
 
 pub struct TourneyBot {

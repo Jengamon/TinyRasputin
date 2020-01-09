@@ -1,4 +1,7 @@
-use super::actions::{ActionType, Action};
+use super::{
+    actions::{ActionType, Action},
+    cards::Card
+};
 use std::cmp::{min, max};
 
 pub const NUM_ROUNDS: i64 = 1000;
@@ -6,7 +9,7 @@ pub const STARTING_STACK: i64 = 200;
 pub const BIG_BLIND: i64 = 2;
 pub const SMALL_BLIND: i64 = 1;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct GameState {
     pub bankroll: i64,
     pub game_clock: f64,
@@ -27,8 +30,8 @@ pub struct RoundState {
     pub street: i32,
     pub pips: [i64; 2],
     pub stacks: [i64; 2],
-    pub hands: [[String; 2]; 2],
-    pub deck: Vec<String>,
+    pub hands: [Option<[Card; 2]>; 2],
+    pub deck: Vec<Card>,
     pub previous: Option<Box<RoundState>>,
 }
 
@@ -86,7 +89,7 @@ impl RoundState {
             street: new_street,
             pips: [0, 0],
             stacks: self.stacks,
-            hands: self.hands.clone(),
+            hands: self.hands,
             deck: self.deck.clone(),
             previous: Some(Box::new(self.clone()))
         })
@@ -115,7 +118,7 @@ impl RoundState {
                         street: 0,
                         pips: [BIG_BLIND, BIG_BLIND],
                         stacks: [STARTING_STACK - BIG_BLIND, STARTING_STACK - BIG_BLIND],
-                        hands: self.hands.clone(),
+                        hands: self.hands,
                         deck: self.deck.clone(),
                         previous: Some(Box::new(self.clone()))
                     })
@@ -130,7 +133,7 @@ impl RoundState {
                     street: self.street,
                     pips: new_pips,
                     stacks: new_stacks,
-                    hands: self.hands.clone(),
+                    hands: self.hands,
                     deck: self.deck.clone(),
                     previous: Some(Box::new(self.clone()))
                 };
@@ -147,7 +150,7 @@ impl RoundState {
                     street: self.street,
                     pips: self.pips,
                     stacks: self.stacks,
-                    hands: self.hands.clone(),
+                    hands: self.hands,
                     deck: self.deck.clone(),
                     previous: Some(Box::new(self.clone()))
                 })
@@ -163,7 +166,7 @@ impl RoundState {
                     street: self.street,
                     pips: new_pips,
                     stacks: new_stacks,
-                    hands: self.hands.clone(),
+                    hands: self.hands,
                     deck: self.deck.clone(),
                     previous: Some(Box::new(self.clone()))
                 })
