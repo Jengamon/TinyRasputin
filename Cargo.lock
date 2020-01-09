@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "tinyrasputin"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "bitflags 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",

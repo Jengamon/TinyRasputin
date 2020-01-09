@@ -1,6 +1,6 @@
 use super::skeleton::{
     bot::PokerBot,
-    actions::Action,
+    actions::{Action, ActionType},
     states::{GameState, RoundState, TerminalState}
 };
 
@@ -26,6 +26,17 @@ impl PokerBot for TestBot {
     }
 
     fn get_action(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) -> Action {
-        Action::Call
+        println!("Current game state: {:?}", rs);
+        let la = rs.legal_actions();
+        if (la & ActionType::RAISE).bits() != 0 {
+            println!("Raised by {}", rs.raise_bounds()[1]);
+            Action::Raise(rs.raise_bounds()[1])
+        } else {
+            if (la & ActionType::CALL).bits() != 0 {
+                Action::Call
+            } else {
+                Action::Check
+            }
+        }
     }
 }

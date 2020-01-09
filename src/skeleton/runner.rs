@@ -1,19 +1,19 @@
 use std::net::{TcpStream, ToSocketAddrs};
 use super::bot::PokerBot;
-use std::io::prelude::*;
+use std::io::{prelude::*, BufReader};
 use super::actions::Action;
 use super::states::{SMALL_BLIND, BIG_BLIND, STARTING_STACK, GameState, RoundState, TerminalState, StateResult};
 
 pub struct Runner {
-    stream: TcpStream,
+    stream: BufReader<TcpStream>,
     bot: Box<dyn PokerBot>,
 }
 
 impl Runner {
     pub fn run_bot<PB: 'static, TS>(bot: PB, addr: TS) -> std::io::Result<()> where PB: PokerBot, TS: ToSocketAddrs {
-        let stream = TcpStream::connect(addr.to_socket_addrs().unwrap().nth(0).unwrap())?;
+        let stream = TcpStream::connect(addr)?;
         let mut runner = Runner {
-            stream,
+            stream: BufReader::new(stream),
             bot: Box::new(bot)
         };
         runner.run()
@@ -22,7 +22,7 @@ impl Runner {
     /// Returns an incoming message from the engine.
     pub fn receive(&mut self) -> std::io::Result<Vec<String>> {
         let mut s = String::new();
-        self.stream.read_to_string(&mut s)?;
+        self.stream.read_line(&mut s)?;
         Ok(s.trim().split(" ").map(|x| x.to_string()).collect::<_>())
     }
 
@@ -33,7 +33,8 @@ impl Runner {
             Action::Check => "K".into(),
             Action::Raise(amt) => format!("R{}", amt)
         };
-        write!(self.stream, "{}", code)
+        writeln!(self.stream.get_mut(), "{}", code)?;
+        self.stream.get_mut().flush()
     }
 
     pub fn run(&mut self) -> std::io::Result<()> {

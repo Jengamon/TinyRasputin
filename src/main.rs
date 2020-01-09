@@ -9,7 +9,7 @@ use std::net::Ipv4Addr;
 fn main() -> std::io::Result<()> {
     // read in arguments
     let matches = App::new("TinyRasputin - A Rust PokerBot")
-                    .version("0.1.0")
+                    .version(env!("CARGO_PKG_VERSION"))
                     .author("Jengamon <uokwo@mit.edu>")
                     .about("Can play poker over the interwebz")
                     .arg(Arg::with_name("host")
