@@ -13,6 +13,7 @@ pub struct Runner<'a> {
 impl<'a> Runner<'a> {
     pub fn run_bot<TS>(bot: &'a mut Box<dyn PokerBot>, addr: TS) -> std::io::Result<()> where TS: ToSocketAddrs {
         let stream = TcpStream::connect(addr)?;
+        stream.set_nodelay(true)?;
         let mut runner = Runner {
             stream: BufReader::new(stream),
             bot
