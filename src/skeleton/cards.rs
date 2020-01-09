@@ -6,6 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 use std::error::Error;
 
+/// Encodes card suit
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CardSuit {
     Hearts,
@@ -46,6 +47,7 @@ impl fmt::Display for CardSuit {
     }
 }
 
+/// Encodes card value
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub enum CardValue {
     Two,
@@ -113,6 +115,7 @@ impl fmt::Display for CardValue {
     }
 }
 
+/// Encodes a valid poker card
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 pub struct Card {
     suit: CardSuit,
@@ -153,6 +156,7 @@ impl fmt::Display for Card {
     }
 }
 
+/// Wraps a deck and makes it printable
 #[derive(Debug, Clone)]
 pub struct CardDeck(pub Vec<Card>);
 
@@ -172,6 +176,7 @@ impl fmt::Display for CardDeck {
     }
 }
 
+/// Wraps a hand and makes it printable
 #[derive(Debug, Clone, Copy)]
 pub struct CardHand(pub [Card; 2]);
 
@@ -181,6 +186,7 @@ impl fmt::Display for CardHand {
     }
 }
 
+/// Allows for Option<CardHand> to be easily printed
 pub trait CardHandExt {
     fn print(&self) -> String;
 }
@@ -191,6 +197,7 @@ impl CardHandExt for Option<CardHand> {
     }
 }
 
+/// Describes various errors that can occur in conversion to Card{Suit, Hand} from strings
 #[derive(Debug)]
 pub enum CardConversionError {
     InvalidSuit(char),

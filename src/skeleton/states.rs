@@ -9,6 +9,7 @@ pub const STARTING_STACK: i64 = 200;
 pub const BIG_BLIND: i64 = 2;
 pub const SMALL_BLIND: i64 = 1;
 
+/// Encodes overall game progress
 #[derive(Debug, Clone, Copy)]
 pub struct GameState {
     pub bankroll: i64,
@@ -35,6 +36,7 @@ pub struct RoundState {
     pub previous: Option<Box<RoundState>>,
 }
 
+/// Stores either a RoundState or a TerminalState
 #[derive(Debug, Clone)]
 pub enum StateResult {
     Round(RoundState),

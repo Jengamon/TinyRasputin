@@ -11,6 +11,7 @@ pub struct Runner<'a> {
 }
 
 impl<'a> Runner<'a> {
+    /// Runs a PokerBot using the Runner
     pub fn run_bot<TS>(bot: &'a mut Box<dyn PokerBot>, addr: TS) -> std::io::Result<()> where TS: ToSocketAddrs {
         let stream = TcpStream::connect(addr)?;
         stream.set_nodelay(true)?;
@@ -28,6 +29,7 @@ impl<'a> Runner<'a> {
         Ok(s.trim().split(" ").map(|x| x.to_string()).collect::<_>())
     }
 
+    /// Send an action message to the engine
     pub fn send(&mut self, act: Action) -> std::io::Result<()> {
         let code = match act {
             Action::Fold => "F".into(),
@@ -39,6 +41,7 @@ impl<'a> Runner<'a> {
         self.stream.get_mut().flush()
     }
 
+    /// Processes actions from the engine
     pub fn run(&mut self) -> std::io::Result<()> {
         let mut game_state = GameState {
             bankroll: 0,
@@ -54,12 +57,15 @@ impl<'a> Runner<'a> {
                 let char = clause.chars().nth(0).unwrap();
                 let arg = clause.chars().skip(1).collect::<String>();
                 match char {
+                    // Set game clock
                     'T' => game_state = GameState {
                         bankroll: game_state.bankroll,
                         game_clock: arg.parse::<f64>().expect("Expected a float for game time"),
                         round_num: game_state.round_num
                     },
+                    // Set player index (also referred to as "active")
                     'P' => player_index = arg.parse::<usize>().expect("Expected an unsigned integer for player index"),
+                    // Set our hand
                     'H' => {
                         let mut hands = [None, None];
                         let proposed_hand = arg.split(",").collect::<Vec<_>>();
@@ -84,30 +90,35 @@ impl<'a> Runner<'a> {
                             round_flag = false;
                         }
                     },
+                    // A fold action
                     'F' => if let Some(rs) = round_state.clone() {
                         match rs.proceed(Action::Fold) {
                             StateResult::Round(r) => round_state = Some(r),
                             StateResult::Terminal(t) => terminal_state = Some(t),
                         }
                     },
+                    // A call action
                     'C' => if let Some(rs) = round_state.clone() {
                         match rs.proceed(Action::Call) {
                             StateResult::Round(r) => round_state = Some(r),
                             StateResult::Terminal(t) => terminal_state = Some(t),
                         }
                     },
+                    // A check action
                     'K' => if let Some(rs) = round_state.clone() {
                         match rs.proceed(Action::Check) {
                             StateResult::Round(r) => round_state = Some(r),
                             StateResult::Terminal(t) => terminal_state = Some(t),
                         }
                     },
+                    // A raise action
                     'R' => if let Some(rs) = round_state.clone() {
                         match rs.proceed(Action::Raise(arg.parse::<i64>().expect("Expected an integer for raise number"))) {
                             StateResult::Round(r) => round_state = Some(r),
                             StateResult::Terminal(t) => terminal_state = Some(t),
                         }
                     },
+                    // The deck was updated
                     'B' => if let Some(rs) = round_state.clone() {
                         round_state = Some(RoundState {
                             button: rs.button,
@@ -119,6 +130,7 @@ impl<'a> Runner<'a> {
                             previous: rs.previous
                         })
                     },
+                    // Reveal the opponent's hand
                     'O' => if let Some(rs) = round_state.clone() {
                         if let Some(prs) = rs.previous {
                             // backtrack
@@ -146,6 +158,7 @@ impl<'a> Runner<'a> {
                             })
                         }
                     },
+                    // Delta has been calculated
                     'D' => {
                         assert!(terminal_state.is_some());
                         let delta = arg.parse::<i64>().expect("Expected an integer when calculating deltas");
@@ -168,8 +181,9 @@ impl<'a> Runner<'a> {
                         };
                         round_flag = true;
                     },
+                    // End the game
                     'Q' => return Ok(()),
-                    _ => unreachable!()
+                    c => unreachable!("Invalid command sent from engine: {}", c)
                 }
             }
             if round_flag { // ack the engine
@@ -180,7 +194,7 @@ impl<'a> Runner<'a> {
                     let action = self.bot.get_action(&game_state, &round_state, player_index);
                     self.send(action)?
                 } else {
-                    unreachable!("Error in server message: No round state")
+                    unreachable!("Error in server message sequence: No current round state")
                 }
             }
         }
