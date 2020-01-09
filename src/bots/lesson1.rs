@@ -2,7 +2,7 @@ use super::super::skeleton::{
     bot::PokerBot,
     actions::{Action, ActionType},
     states::{STARTING_STACK, GameState, RoundState, TerminalState},
-    cards::{CardValue, Card}
+    cards::{CardValue, Card, CardHandExt}
 };
 
 use std::collections::HashMap;
@@ -27,7 +27,8 @@ impl Default for Lesson1Bot {
 
 impl PokerBot for Lesson1Bot {
     fn handle_new_round(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) {
-        println!("Round bot state: {:?}", self);
+        println!("Game state: {:?}", gs);
+        //println!("Round bot state: {:?}", self);
     }
 
     fn handle_round_over(&mut self, gs: &GameState, ts: &TerminalState, player_index: usize) {
@@ -36,10 +37,10 @@ impl PokerBot for Lesson1Bot {
         let street = previous_state.street;
         let ref my_cards = previous_state.hands[player_index];
         let ref opp_cards = previous_state.hands[1 - player_index];
-        println!("Cards: {:?} {:?}", my_cards, opp_cards);
+        println!("Cards: {} {}", my_cards.print(), opp_cards.print());
         if opp_cards.is_some() {
-            let opp_cards = opp_cards.unwrap();
-            let my_cards = my_cards.unwrap();
+            let opp_cards = opp_cards.unwrap().0;
+            let my_cards = my_cards.unwrap().0;
             // showdown'd
             if my_delta > 0 {
                 // we won
@@ -61,8 +62,8 @@ impl PokerBot for Lesson1Bot {
     fn get_action(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) -> Action {
         let legal_actions = rs.legal_actions();
         let street = rs.street;
-        let ref my_cards = rs.hands[player_index].unwrap();
-        let ref board_cards = &rs.deck[..street as usize];
+        let ref my_cards = rs.hands[player_index].unwrap().0;
+        let ref board_cards = &rs.deck.0[..street as usize];
         let ref my_pip = rs.pips[player_index];
         let ref opp_pip = rs.pips[1 - player_index];
         let ref my_stack = rs.stacks[player_index];

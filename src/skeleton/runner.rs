@@ -3,19 +3,19 @@ use super::bot::PokerBot;
 use std::io::{prelude::*, BufReader};
 use super::actions::Action;
 use super::states::{SMALL_BLIND, BIG_BLIND, STARTING_STACK, GameState, RoundState, TerminalState, StateResult};
-use super::cards::Card;
+use super::cards::{Card, CardHand, CardDeck};
 
-pub struct Runner {
+pub struct Runner<'a> {
     stream: BufReader<TcpStream>,
-    bot: Box<dyn PokerBot>,
+    bot: &'a mut Box<dyn PokerBot>,
 }
 
-impl Runner {
-    pub fn run_bot<PB: 'static, TS>(bot: PB, addr: TS) -> std::io::Result<()> where PB: PokerBot, TS: ToSocketAddrs {
+impl<'a> Runner<'a> {
+    pub fn run_bot<TS>(bot: &'a mut Box<dyn PokerBot>, addr: TS) -> std::io::Result<()> where TS: ToSocketAddrs {
         let stream = TcpStream::connect(addr)?;
         let mut runner = Runner {
             stream: BufReader::new(stream),
-            bot: Box::new(bot)
+            bot
         };
         runner.run()
     }
@@ -63,10 +63,10 @@ impl Runner {
                         let mut hands = [None, None];
                         let proposed_hand = arg.split(",").collect::<Vec<_>>();
                         assert!(proposed_hand.len() == 2);
-                        hands[player_index] = Some([
+                        hands[player_index] = Some(CardHand([
                             proposed_hand[0].parse::<Card>().expect("Expected card in hand 1"), 
                             proposed_hand[1].parse::<Card>().expect("Expected card in hand 2")
-                        ]);
+                        ]));
                         let pips = [SMALL_BLIND, BIG_BLIND];
                         let stacks = [STARTING_STACK - SMALL_BLIND, STARTING_STACK - BIG_BLIND];
                         round_state = Some(RoundState {
@@ -75,7 +75,7 @@ impl Runner {
                             pips,
                             stacks,
                             hands,
-                            deck: vec![],
+                            deck: CardDeck(vec![]),
                             previous: None
                         });
                         if round_flag {
@@ -114,7 +114,7 @@ impl Runner {
                             pips: rs.pips,
                             stacks: rs.stacks,
                             hands: rs.hands,
-                            deck: arg.split(",").enumerate().map(|(i, x)| x.parse::<Card>().expect(&format!("Expected card in deck {}", i))).collect(),
+                            deck: CardDeck(arg.split(",").enumerate().map(|(i, x)| x.parse::<Card>().expect(&format!("Expected card in deck {}", i))).collect()),
                             previous: rs.previous
                         })
                     },
@@ -124,10 +124,10 @@ impl Runner {
                             let mut revised_hands = prs.hands;
                             let prevised_hand = arg.split(",").collect::<Vec<_>>();
                             assert!(prevised_hand.len() == 2);
-                            revised_hands[1 - player_index] = Some([
+                            revised_hands[1 - player_index] = Some(CardHand([
                                 prevised_hand[0].parse::<Card>().expect("Expected card in opponent hand 1"),
                                 prevised_hand[1].parse::<Card>().expect("Expected card in opponent hand 2")
-                            ]);
+                            ]));
                             // rebuild history
                             let new_round_state = RoundState {
                                 button: prs.button,

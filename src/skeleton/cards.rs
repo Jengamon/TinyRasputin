@@ -153,6 +153,43 @@ impl fmt::Display for Card {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CardDeck(pub Vec<Card>);
+
+impl fmt::Display for CardDeck {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        if self.0.is_empty() {
+            write!(fmt, "<empty>")
+        } else {
+            write!(fmt, "[")?;
+            let first = self.0.iter().nth(0).unwrap();
+            write!(fmt, "{}", first)?;
+            for els in self.0.iter().skip(1) {
+                write!(fmt, ", {}", els)?;
+            }
+            write!(fmt, "]")
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CardHand(pub [Card; 2]);
+
+impl fmt::Display for CardHand {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "[{}, {}]", self.0[0], self.0[1])
+    }
+}
+
+pub trait CardHandExt {
+    fn print(&self) -> String;
+}
+
+impl CardHandExt for Option<CardHand> {
+    fn print(&self) -> String {
+        self.map(|x| format!("{}", x)).unwrap_or("<empty>".into())
+    }
+}
 
 #[derive(Debug)]
 pub enum CardConversionError {

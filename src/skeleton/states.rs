@@ -1,6 +1,6 @@
 use super::{
     actions::{ActionType, Action},
-    cards::Card
+    cards::{CardDeck, CardHand}
 };
 use std::cmp::{min, max};
 
@@ -30,8 +30,8 @@ pub struct RoundState {
     pub street: i32,
     pub pips: [i64; 2],
     pub stacks: [i64; 2],
-    pub hands: [Option<[Card; 2]>; 2],
-    pub deck: Vec<Card>,
+    pub hands: [Option<CardHand>; 2],
+    pub deck: CardDeck,
     pub previous: Option<Box<RoundState>>,
 }
 
