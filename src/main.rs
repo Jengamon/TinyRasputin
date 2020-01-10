@@ -1,5 +1,6 @@
 mod skeleton;
 mod bots;
+mod engine;
 
 use clap::{App, Arg};
 use bots::*;
