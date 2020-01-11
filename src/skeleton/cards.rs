@@ -5,6 +5,7 @@
 use std::fmt;
 use std::str::FromStr;
 use std::error::Error;
+use itertools::Itertools;
 
 /// Encodes card suit
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
@@ -18,6 +19,7 @@ pub enum CardSuit {
 impl FromStr for CardSuit {
     type Err = CardConversionError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
         if s.len() > 1 {
             return Err(CardConversionError::TooLong(s.to_string()))
         }
@@ -68,6 +70,7 @@ pub enum CardValue {
 impl FromStr for CardValue {
     type Err = CardConversionError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
         if s.len() > 1 {
             return Err(CardConversionError::TooLong(s.to_string()))
         }
@@ -139,6 +142,7 @@ impl Card {
 impl FromStr for Card {
     type Err = CardConversionError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.trim();
         if s.len() > 2 {
             return Err(CardConversionError::TooLong(s.to_string()))
         } else if s.len() < 2 {
@@ -165,13 +169,7 @@ impl fmt::Display for CardDeck {
         if self.0.is_empty() {
             write!(fmt, "<empty>")
         } else {
-            write!(fmt, "[")?;
-            let first = self.0.iter().nth(0).unwrap();
-            write!(fmt, "{}", first)?;
-            for els in self.0.iter().skip(1) {
-                write!(fmt, ", {}", els)?;
-            }
-            write!(fmt, "]")
+            write!(fmt, "[{}]", self.0.iter().format(", "))
         }
     }
 }

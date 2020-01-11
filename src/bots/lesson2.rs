@@ -1,4 +1,4 @@
-use super::super::skeleton::{
+use tinyrasputin::skeleton::{
     bot::PokerBot,
     actions::{Action, ActionType},
     states::{STARTING_STACK, GameState, RoundState, TerminalState},
@@ -28,7 +28,7 @@ impl Default for Lesson2Bot {
 
 impl PokerBot for Lesson2Bot {
     fn handle_new_round(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) {
-        println!("Game state: {:?}", gs);
+        println!("Game state: {:?} {:?}", gs, rs);
         //println!("Round bot state: {:?}", self);
     }
 
@@ -80,7 +80,7 @@ impl PokerBot for Lesson2Bot {
             let min_cost = min_raise - my_pip;
             let max_cost = max_raise - my_pip;
             let mut rng = rand::thread_rng();
-            let pot_total = my_pip + opp_pip;
+            let pot_total = my_contrib + opp_contrib;
             let p = (continue_cost as f64) / (pot_total as f64 + continue_cost as f64);
             let mut bet_amount = (0.75 * pot_total as f64) as i64;
             if bet_amount < min_raise {
@@ -114,7 +114,9 @@ impl PokerBot for Lesson2Bot {
             }
             if my_cards[0] == my_cards[1] {
                 if fc_winrate > p {
-                    return Action::Raise(bet_amount)
+                    if rng.gen_bool(fc_winrate) {
+                        return Action::Raise(bet_amount)
+                    }
                 }
             }
         }

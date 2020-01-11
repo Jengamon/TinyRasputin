@@ -4,10 +4,37 @@ const MIN_CARDS: usize = 2;
 use super::super::skeleton::{
     cards::{CardValue, Card}
 };
-use crate::into_cards;
 
-use std::cmp::Ordering;
+use std::cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
 use std::fmt;
+#[allow(unused_imports)]
+use itertools::Itertools;
+
+#[macro_export]
+macro_rules! into_ordering {
+    ($t:expr) => {{
+        let order: Vec<_> = $t.split(",").map(|x| x.parse::<CardValue>()).fold(vec![], |mut a, c| {
+            match c {
+                Ok(c) => {
+                    let contains = a.iter().any(|x| match x {
+                        Ok(x) => *x == c,
+                        Err(_) => false
+                    });
+                    if !contains {
+                        a.push(Ok(c));
+                    }
+                },
+                Err(e) => a.push(Err(e))
+            };
+            a
+        });
+        assert!(order.len() == 13);
+        order.into_iter().enumerate().try_fold([CardValue::Two; 13], |mut ordering, (i, val)| match val {
+            Ok(val) => { ordering[i] = val; Ok(ordering) },
+            Err(e) => Err(e)
+        }).unwrap()
+    }} 
+}
 
 /// Valid hands
 #[derive(Debug, Clone)]
@@ -37,6 +64,70 @@ impl ShowdownHand {
             ShowdownHand::TwoPair(a) => a.clone(),
             ShowdownHand::Pair(a) => a.clone(),
             ShowdownHand::HighCard(c) => vec![*c]
+        }
+    }
+
+    pub fn is_royal_flush(&self) -> bool {
+        match self {
+            ShowdownHand::RoyalFlush(..) => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_straight(&self) -> bool {
+        match self {
+            ShowdownHand::RoyalFlush(..) => true,
+            ShowdownHand::StraightFlush(..) => true,
+            ShowdownHand::Straight(..) => true, 
+            _ => false
+        }
+    }
+
+    pub fn is_flush(&self) -> bool {
+        match self {
+            ShowdownHand::RoyalFlush(..) => true,
+            ShowdownHand::StraightFlush(..) => true,
+            ShowdownHand::Flush(..) => true, 
+            _ => false
+        }
+    }
+
+    pub fn is_of_a_kind(&self) -> bool {
+        match self {
+            ShowdownHand::FourOfAKind(..) => true,
+            ShowdownHand::ThreeOfAKind(..) => true,
+            ShowdownHand::Pair(..) => true,
+            _ => false
+        }
+    }
+
+    pub fn kind_count(&self) -> Option<usize> {
+        match self {
+            ShowdownHand::FourOfAKind(..) => Some(4),
+            ShowdownHand::ThreeOfAKind(..) => Some(3),
+            ShowdownHand::Pair(..) => Some(2),
+            _ => None
+        }
+    }
+
+    pub fn is_two_pair(&self) -> bool {
+        match self {
+            ShowdownHand::TwoPair(..) => true,
+            _ => false
+        }
+    }
+
+    pub fn is_full_house(&self) -> bool {
+        match self {
+            ShowdownHand::FullHouse(..) => true,
+            _ => false
+        }
+    }
+
+    pub fn is_high_card(&self) -> bool {
+        match self {
+            ShowdownHand::HighCard(..) => true,
+            _ => false
         }
     }
 
@@ -104,6 +195,7 @@ impl fmt::Display for ShowdownHand {
 }
 
 /// Detects the best hand out of the given cards
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShowdownEngine {
     ordering: [CardValue; 13]
 }
@@ -135,16 +227,16 @@ impl ShowdownEngine {
     pub fn process_hand(&self, hand: &[Card]) -> ShowdownHand {
         assert!(ShowdownEngine::verify_hand(hand));
 
-        //println!("Hand: {:?}", hand);
+        //println!("Hand: [{}]", hand.iter().format(", "));
        
         let pf = self.detect_flushes(hand);
         let ps = self.detect_straights(hand);
-        //println!("PF: {:?}", pf);
-        //println!("PS: {:?}", ps);
+        //println!("PF: {}", pf.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
+        //println!("PS: {}", ps.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
         let mut fs: Vec<Vec<Card>> = vec![];
         for flush in &pf {
             for straight in &ps {
-                let shared: Vec<_> = flush.iter().filter(|x| straight.contains(x)).cloned().collect();
+                let shared: Vec<_> = flush.iter().filter(|x| straight.contains(x)).copied().collect();
                 if shared.len() >= 5 {
                     fs.push(shared);
                 }
@@ -185,6 +277,30 @@ impl ShowdownEngine {
                 return ShowdownHand::Straight(self.best_hand(&highest))
             }
         }
+        self.process_hand_no_straight_flush(hand)
+    }
+
+    pub fn process_hand_no_straight(&self, hand: &[Card]) -> ShowdownHand {
+        assert!(ShowdownEngine::verify_hand(hand));
+
+        //println!("Hand: [{}]", hand.iter().format(", "));
+       
+        let pf = self.detect_flushes(hand);
+        //println!("PF: {}", pf.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
+        if !pf.is_empty() {
+            let highest = pf.iter().cloned().max_by(|a, b| {
+                let ahc = self.highest_card(&a);
+                let bhc = self.highest_card(&b);
+                let oa = self.ordering.iter().position(|x| *x == ahc.value()).unwrap();
+                let ob = self.ordering.iter().position(|x| *x == bhc.value()).unwrap();
+                oa.cmp(&ob)
+            }).unwrap().clone();
+            return ShowdownHand::Flush(self.best_hand(&highest))
+        }
+        self.process_hand_no_straight_flush(hand)
+    }
+
+    pub fn process_hand_no_straight_flush(&self, hand: &[Card]) -> ShowdownHand {
         if let Some(foak) = self.detect_of_a_kind(hand, 4) {
             return ShowdownHand::FourOfAKind(foak)
         }
@@ -233,28 +349,27 @@ impl ShowdownEngine {
     }
 
     fn detect_straights(&self, hand: &[Card]) -> Vec<Vec<Card>> {
-        let mut possible_straights: Vec<Vec<Card>> = vec![];
-        for card in hand {
-            let mut flag = false;
-            for ps in &mut possible_straights {
-                let bottom = self.ordering.iter().position(|x| *x == ps.iter().nth(0).unwrap().value()).unwrap();
-                let top = self.ordering.iter().position(|x| *x == ps.iter().last().unwrap().value()).unwrap();
-                let cardv = self.ordering.iter().position(|x| *x == card.value()).unwrap();
-                if cardv + 1 == bottom {
-                    ps.insert(0, *card);
-                    flag = true;
-                } else if cardv == top + 1 {
-                    ps.push(*card);
-                    flag = true;
-                } else {
-                    flag = flag || false;
+        let mut sorted_bins = [vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![], vec![]];
+        for i in 1..14 {
+            sorted_bins[i] = hand.iter().filter(|x| (i - 1) == self.ordering.iter().position(|y| *y == x.value()).unwrap()).collect();
+        }
+        sorted_bins[0] = sorted_bins[13].clone();
+        //println!("Bins: {}", sorted_bins.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
+        sorted_bins.windows(5).filter(|x| x.len() == 5).flat_map(|x| {
+            let mut permutations = vec![];
+            for c1 in &x[0] {
+                for c2 in &x[1] {
+                    for c3 in &x[2] {
+                        for c4 in &x[3] {
+                            for c5 in &x[4] {
+                                permutations.push(vec![**c1, **c2, **c3, **c4, **c5]);
+                            }
+                        }
+                    }
                 }
             }
-            if !flag {
-                possible_straights.push(vec![*card]);
-            }
-        }
-        possible_straights.into_iter().filter(|x| x.len() >= 5).collect::<Vec<Vec<_>>>()
+            permutations
+        }).collect()
     }
 
     fn detect_flushes(&self, hand: &[Card]) -> Vec<Vec<Card>> {
@@ -383,27 +498,50 @@ impl ShowdownEngine {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ShowdownSet(pub ShowdownEngine, pub ShowdownHand);
+
+impl PartialEq for ShowdownSet {
+    fn eq(&self, o: &ShowdownSet) -> bool {
+        self.partial_cmp(o) == Some(Ordering::Equal)
+    }
+}
+
+impl PartialOrd for ShowdownSet {
+    fn partial_cmp(&self, o: &ShowdownSet) -> Option<Ordering> {
+        if o.0 == self.0 {
+            Some(o.0.compare_hands(&self.1, &o.1))
+        } else {
+            None
+        }
+    }
+}
+
+impl Eq for ShowdownSet {}
+
+// Test for engine correctness
 #[test]
 fn showdown_test() {
-    let mut ordering = [CardValue::Two; 13];
-    let order: Vec<_> = "2,3,4,5,6,7,8,9,T,J,Q,K,A".split(",").map(|x| x.parse::<CardValue>().unwrap()).collect();
-    for i in 0..13 {
-        ordering[i] = order[i];
-    }
+    use crate::into_cards;
+
     let showdown = ShowdownEngine {
-        ordering
+        ordering: into_ordering!("2,3,4,5,6,7,8,9,T,J,Q,K,A")
     };
 
     let tests = [
+        // Coherency Test
         ("2c,2h,Ac,Ah", ShowdownHand::TwoPair(into_cards!("2c,2h,Ac,Ah"))), 
         ("2c,2h,Ac,Ah,As", ShowdownHand::FullHouse(into_cards!("2c,2h,Ac,Ah,As"))),
         ("2c,Ac,2h,Ah,As", ShowdownHand::FullHouse(into_cards!("As,Ah,Ac,2c,2h"))),
         ("2c,3c,4c,5c,7c", ShowdownHand::Flush(into_cards!("2c,3c,4c,5c,7c"))),
+        ("Tc,Jc,Kc,Qc,Ac", ShowdownHand::RoyalFlush(into_cards!("Tc,Jc,Qc,Kc,Ac"))),
+        ("Ac,2c,3c,4c,5c", ShowdownHand::StraightFlush(into_cards!("Ac,3c,5c,2c,4c"))),
+        ("6c,2c", ShowdownHand::HighCard(into_cards!("6c")[0])),
     ];
 
     for (hand, best) in tests.into_iter() {
         let hand = into_cards!(hand);
         let detected = showdown.process_hand(&hand);
-        assert_eq!(showdown.compare_hands(&detected, &best), Ordering::Equal);
+        assert_eq!(ShowdownSet(showdown, detected), ShowdownSet(showdown, best.clone()));
     }
 }

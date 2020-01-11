@@ -1,4 +1,4 @@
-use super::super::skeleton::{
+use tinyrasputin::skeleton::{
     bot::PokerBot,
     actions::{Action, ActionType},
     states::{STARTING_STACK, GameState, RoundState, TerminalState}

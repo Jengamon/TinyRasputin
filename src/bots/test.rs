@@ -1,8 +1,10 @@
-use super::super::skeleton::{
+use tinyrasputin::skeleton::{
     bot::PokerBot,
     actions::{Action, ActionType},
-    states::{STARTING_STACK, GameState, RoundState, TerminalState}
+    states::{STARTING_STACK, GameState, RoundState, TerminalState},
+    cards::CardHandExt,
 };
+use itertools::Itertools;
 
 pub struct TestBot {
 
@@ -22,11 +24,11 @@ impl PokerBot for TestBot {
     }
 
     fn handle_round_over(&mut self, gs: &GameState, ts: &TerminalState, player_index: usize) {
-        println!("Round over! Progress: {:?} {:?} {:?}", gs, ts.previous.hands, ts.previous.deck);
+        println!("Round over! Progress: {:?} [{}] {}", gs, ts.previous.hands.iter().map(|x| x.print()).format(", "), ts.previous.deck);
     }
 
     fn get_action(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) -> Action {
-        println!("Current game state: {:?} {:?}", rs.hands, rs.deck);
+        println!("Current game state: {} {}", rs.hands.iter().map(|x| x.print()).format(", "), rs.deck);
         let la = rs.legal_actions();
         if (la & ActionType::RAISE).bits() != 0 {
             Action::Raise(rs.raise_bounds()[1])
