@@ -1,6 +1,3 @@
-const MAX_CARDS: usize = 7;
-const MIN_CARDS: usize = 2;
-
 use super::super::skeleton::{
     cards::{CardValue, Card}
 };
@@ -194,6 +191,16 @@ impl fmt::Display for ShowdownHand {
     }
 }
 
+// Either a potential hand, or an actual formed hand
+#[derive(Debug, Clone)]
+pub enum PotentialHand {
+    Hand(ShowdownHand), // An actual hand that can win
+    InsideStrightDraw(Vec<Card>), // A potential straight with a hole inside
+    OpenEndedStraightDraw(Vec<Card>), // A potential straight with a missing card outside
+    // Don't mess with backhand straight draws
+    FlushDraw(Vec<Card>), // A potential flush with 1 missing card.
+}
+
 /// Detects the best hand out of the given cards
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShowdownEngine {
@@ -220,13 +227,11 @@ impl ShowdownEngine {
         }
     }
 
-    fn verify_hand(hand: &[Card]) -> bool {
-        hand.len() >= MIN_CARDS && hand.len() <= MAX_CARDS
+    pub fn find_potential_hands(&self, hand: &[Card]) -> Vec<PotentialHand> {
+        todo!()
     }
 
     pub fn process_hand(&self, hand: &[Card]) -> ShowdownHand {
-        assert!(ShowdownEngine::verify_hand(hand));
-
         //println!("Hand: [{}]", hand.iter().format(", "));
        
         let pf = self.detect_flushes(hand);
@@ -281,8 +286,6 @@ impl ShowdownEngine {
     }
 
     pub fn process_hand_no_straight(&self, hand: &[Card]) -> ShowdownHand {
-        assert!(ShowdownEngine::verify_hand(hand));
-
         //println!("Hand: [{}]", hand.iter().format(", "));
        
         let pf = self.detect_flushes(hand);

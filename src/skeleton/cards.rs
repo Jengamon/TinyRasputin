@@ -50,7 +50,7 @@ impl fmt::Display for CardSuit {
 }
 
 /// Encodes card value
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum CardValue {
     Two,
     Three,

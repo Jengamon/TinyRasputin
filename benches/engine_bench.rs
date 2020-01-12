@@ -69,7 +69,7 @@ pub fn cycles_resolution_benchmark(c: &mut Criterion) {
     let relations_to_test = [
         (vec![(CardValue::Three, CardValue::Ace), (CardValue::Ace, CardValue::King), (CardValue::King, CardValue::Three)], vec![]), 
         (vec![(CardValue::Two, CardValue::Ace), (CardValue::Ace, CardValue::Two)], vec![]),
-        (vec![(CardValue::Two, CardValue::Ace), (CardValue::Ace, CardValue::Two), (CardValue::Three, CardValue::Two)], vec![(CardValue::Two, CardValue::Ace), (CardValue::Three, CardValue::Two)]),
+        (vec![(CardValue::Two, CardValue::Ace), (CardValue::Ace, CardValue::Two), (CardValue::Three, CardValue::Two)], vec![(CardValue::Three, CardValue::Two)]),
         (vec![(CardValue::Two, CardValue::Ace)], vec![(CardValue::Two, CardValue::Ace)]),
         (vec![(CardValue::Two, CardValue::Ace), (CardValue::Ace, CardValue::Two), (CardValue::Three, CardValue::Two), (CardValue::Two, CardValue::Three)], vec![]),
         (vec![

@@ -6,27 +6,58 @@ use tinyrasputin::skeleton::{
 };
 use tinyrasputin::engine::{
     showdown::{ShowdownEngine, ShowdownHand},
+    probability::ProbabilityEngine,
     relations::{generate_ordering, detect_cycles, resolve_cycles, RelationsExt},
 };
 use std::cmp::Ordering;
-use std::collections::HashMap;
 use rand::prelude::*;
 use itertools::Itertools;
+use num_format::{Locale, ToFormattedString};
+
+const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
 
 pub struct TourneyBot {
-    wins_dict: HashMap<CardValue, u32>,
-    showdowns_dict: HashMap<CardValue, u32>,
     ordering: [CardValue; 13],
     relations: Vec<(CardValue, CardValue)>,
+    prob_engine: ProbabilityEngine,
 }
 
 impl Default for TourneyBot {
     fn default() -> TourneyBot {
         TourneyBot {
-            wins_dict: HashMap::new(),
-            showdowns_dict: HashMap::new(),
             ordering: generate_ordering(&vec![]),
             relations: vec![],
+            prob_engine: ProbabilityEngine::new(),
+        }
+    }
+}
+
+impl TourneyBot {
+    fn add_relationship(&mut self, strength: f64, (a, b): (CardValue, CardValue)) {
+        println!("Saw relationship {} -> {} with strength {}...", a, b, strength);
+        self.prob_engine.update(&(a, b), strength);
+        let (a, b) = if let Some((a, b)) = self.prob_engine.likely_ordering(&a, &b) {
+            (a, b)
+        } else {
+            (a, b)
+        };
+        println!("Adding relationship {} -> {}", a, b);
+        self.relations.push((a, b));
+        let cycles = detect_cycles(&self.relations);
+        for cycle in cycles.iter() {
+            println!("Detected cycle {}", cycle.iter().format(" -> "));
+            for pair in cycle.windows(2) {
+                // println!("Removing relation {} -> {} due to cycle...", pair[0], pair[1]);
+                let position = self.relations.iter().position(|x| x == &(pair[0], pair[1]));
+                if let Some(position) = position {
+                    self.relations.remove(position);
+                }
+            }
+        }
+        // *relations = relations.remove_redundancies();
+        for (a, b) in resolve_cycles(&self.relations, &cycles)/*.collect::<Vec<_>>().iter()*/ {
+            println!("Readding relation {} -> {}", a, b);
+            self.relations.push((a, b));
         }
     }
 }
@@ -34,10 +65,15 @@ impl Default for TourneyBot {
 impl PokerBot for TourneyBot {
     fn handle_new_round(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) {
         println!("Round #{} time {}", gs.round_num, gs.game_clock);
-        let new_order = generate_ordering(&self.relations);
-        // TODO Add relations that we are sure of
-        self.ordering = new_order;
-        println!("Ordering: [{}]", new_order.iter().format(","));
+        let sample_space_size = self.relations.possibilities();
+        println!("Sample space size -> {}", sample_space_size.to_formatted_string(&Locale::en));
+        // In the unlikely event we actually calculate a "for certain" ordering, just keep it until we violate it enough
+        if sample_space_size > SAMPLE_GUESS_THRESHOLD {
+            let new_order = generate_ordering(&self.relations);
+            // TODO Add relations that we are sure of
+            self.ordering = new_order;
+        }
+        println!("Ordering: [{}]", self.ordering.iter().format(","));
         //println!("Round bot state: {:?}", self);
     }
 
@@ -69,28 +105,6 @@ impl PokerBot for TourneyBot {
                 Ordering::Equal => println!("We had a draw. -> {} ({})", my_delta == 0, my_delta)
             };
 
-            let add_relationship = |relations: &mut Vec<(CardValue, CardValue)>, (a, b)| {
-                if !relations.contains(&(a, b)) {
-                    relations.push((a, b));
-                }
-                let cycles = detect_cycles(&relations);
-                for cycle in cycles.iter() {
-                    println!("Detected cycle {}", cycle.iter().format(" -> "));
-                    for pair in cycle.windows(2) {
-                        // println!("Removing relation {} -> {} due to cycle...", pair[0], pair[1]);
-                        let position = relations.iter().position(|x| x == &(pair[0], pair[1]));
-                        if let Some(position) = position {
-                            relations.remove(position);
-                        }
-                    }
-                }
-                *relations = relations.remove_redundancies();
-                for (a, b) in resolve_cycles(&relations, &cycles)/*.collect::<Vec<_>>().iter()*/ {
-                    println!("Readding relation {} -> {}", a, b);
-                    relations.push((a, b));
-                }
-            };
-
             let orel = self.relations.clone();
             
             if my_hand.is_same_type(&opp_hand) {
@@ -107,8 +121,8 @@ impl PokerBot for TourneyBot {
                             let ohi = self.ordering.iter().position(|x| *x == our_high.value()).unwrap();
                             let phi = self.ordering.iter().position(|x| *x == opp_high.value()).unwrap();
                             if ohi < phi { // Correct
-                                println!("Adding (server win) relationship {} -> {}", opp_high.value(), our_high.value());
-                                add_relationship(&mut self.relations, (opp_high.value(), our_high.value()));
+                                println!("(server won) {} -> {}", opp_high.value(), our_high.value());
+                                self.add_relationship(0.33, (opp_high.value(), our_high.value()));
                             } else {
                                 unreachable!("Incorrect assumption (server win)");
                             }
@@ -123,8 +137,8 @@ impl PokerBot for TourneyBot {
                             if ohi < phi {
                                 unreachable!("Incorrect assumption (server lost)");
                             } else { // Correct
-                                println!("Adding (server lost) relationship {} -> {}", our_high.value(), opp_high.value());
-                                add_relationship(&mut self.relations, (our_high.value(), opp_high.value()));
+                                println!("(server lost) {} -> {}", our_high.value(), opp_high.value());
+                                self.add_relationship(0.33, (our_high.value(), opp_high.value()));
                             }
                         }
                     } else if comp == Ordering::Equal && my_delta != 0 {
@@ -132,15 +146,46 @@ impl PokerBot for TourneyBot {
                         let my_highest_card = showdown_engine.highest_card(&my_hand.cards());
                         let opp_highest_card = showdown_engine.highest_card(&opp_hand.cards());
                         let board_highest = showdown_engine.highest_card(&board_cards);
-                        if my_highest_card != opp_highest_card {
+                        if my_highest_card.value() != opp_highest_card.value() {
                             if my_delta > 0 {
-                                println!("Adding (server win draw) relationship {} -> {}", board_highest.value(), my_highest_card.value());
-                                add_relationship(&mut self.relations, (board_highest.value(), my_highest_card.value()));
+                                println!("(server win draw) {} -> {}", board_highest.value(), my_highest_card.value());
+                                self.add_relationship(0.33, (board_highest.value(), my_highest_card.value()));
                             } else {
-                                println!("Adding (server lost draw) relationship {} -> {}", board_highest.value(), opp_highest_card.value());
-                                add_relationship(&mut self.relations, (board_highest.value(), opp_highest_card.value()));
+                                println!("(server lost draw) {} -> {}", board_highest.value(), opp_highest_card.value());
+                                self.add_relationship(0.33, (board_highest.value(), opp_highest_card.value()));
                             }
                         }
+                    } else if (comp == Ordering::Greater && my_delta > 0)  || (comp == Ordering::Less && my_delta < 0) {
+                        // We guessed right. For certain hands this is a boon.
+                        let hand = if my_delta > 0 {
+                            my_hand.clone()
+                        } else {
+                            opp_hand.clone()
+                        };
+
+                        let losing_hand = if my_delta < 0 {
+                            my_hand
+                        } else {
+                            opp_hand
+                        }; 
+
+                        match hand {
+                            ShowdownHand::Straight(cards) | ShowdownHand::StraightFlush(cards) | ShowdownHand::RoyalFlush(cards) => {
+                                // The relative ordering of these cards is most likely relatively correct
+                                let mut values = cards.iter().cloned().map(|x| x.value()).collect::<Vec<_>>();
+                                values.sort_by(|a, b| {
+                                    let a = self.ordering.iter().position(|x| x == a).unwrap();
+                                    let b = self.ordering.iter().position(|x| x == b).unwrap();
+                                    a.cmp(&b)
+                                });
+                                for rel_pair in values.windows(2) {
+                                    let(a, b) = (rel_pair[0], rel_pair[1]);
+                                    println!("(prediction straight) {} -> {}", a, b);
+                                    self.add_relationship(0.125, (a, b));
+                                }
+                            },
+                            _ => {},
+                        };
                     }
                 }
             } else {
@@ -152,22 +197,8 @@ impl PokerBot for TourneyBot {
                 // self.relations = self.relations.remove_redundancies();
                 println!("-\n{}", self.relations.debug_relations());
             }
-            
-            if my_delta > 0 {
-                // we won
-                *self.wins_dict.entry(my_cards[0].value()).or_insert(1) += 1;
-                *self.wins_dict.entry(my_cards[1].value()).or_insert(1) += 1;
-            }
-            *self.showdowns_dict.entry(my_cards[0].value()).or_insert(2) += 1;
-            *self.showdowns_dict.entry(my_cards[1].value()).or_insert(2) += 1;
-            if my_delta < 0 {
-                *self.wins_dict.entry(opp_cards[0].value()).or_insert(1) += 1;
-                *self.wins_dict.entry(opp_cards[1].value()).or_insert(1) += 1;
-            }
-            *self.showdowns_dict.entry(opp_cards[0].value()).or_insert(2) += 1;
-            *self.showdowns_dict.entry(opp_cards[1].value()).or_insert(2) += 1;
         }
-
+        self.relations = self.relations.remove_redundancies();
     }
 
     fn get_action(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) -> Action {
@@ -222,6 +253,13 @@ impl PokerBot for TourneyBot {
 
         // Always fold if all we detect is a "low" high card
         match best_hand {
+            // Our ace in the hole: predicting straights
+            ShowdownHand::Straight(cards) if gs.round_num > 500 => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
+            } else {
+                checkcall()
+            },
+            // Flushes
             ShowdownHand::Flush(cards) if rs.street == 3 => if (legal_actions & ActionType::RAISE).bits() != 0 {
                 Action::Raise(raise_amount(0.25 * pot_total as f64))
             } else {
@@ -232,6 +270,24 @@ impl PokerBot for TourneyBot {
                     Action::Raise(raise_amount(0.75 * my_stack as f64))
                 } else {
                     Action::Raise(raise_amount(0.25 * my_stack as f64))
+                }
+            } else {
+                checkcall()
+            },
+            // Shadow pair
+            ShowdownHand::Pair(cards) if rs.street == 0 && gs.round_num > 200 => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                let value = cards[0].value();
+                let strength = self.ordering.iter().position(|x| x == &value).unwrap();
+                if rng.gen_bool(strength as f64 / 13.0) {
+                    Action::Raise(raise_amount(0.25 * pot_total as f64))
+                } else {
+                    let amount = 0.10 * (strength as f64 / 13.0) * pot_total as f64;
+                    let [mi, mx] = rs.raise_bounds();
+                    if (mi as f64) < amount && amount < mx as f64 && rand::random() {
+                        Action::Raise(raise_amount(amount))
+                    } else {
+                        checkfold() // It isn't a very strong hand
+                    }
                 }
             } else {
                 checkcall()
@@ -252,7 +308,8 @@ impl PokerBot for TourneyBot {
 
 impl Drop for TourneyBot {
     fn drop(&mut self) {
-        println!("Final relations:\n{}", self.relations[..].debug_relations());
-        println!("Final ordering: [{}]", self.ordering.iter().format(","));
+        println!("Final relations:\n{}", self.relations.debug_relations());
+        println!("Final ordering: [{}]", self.ordering.iter().format(""));
+        println!("Probability engine: {:#?}", self.prob_engine);
     }
 }

@@ -1,4 +1,4 @@
 {
-    "build": ["cargo", "build"],
-    "run": ["cargo", "run", "--"]
+    "build": ["sh", "build.sh"],
+    "run": ["sh", "run.sh"]
 }

@@ -10,8 +10,8 @@ edition = "2018"
 bitflags = "1.2"
 clap = "2.33"
 rand = "0.7"
-rand_distr = "0.2"
 itertools = "0.8"
+num-format = "0.4"
 
 [dev-dependencies]
 criterion = "0.3"
