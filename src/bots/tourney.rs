@@ -253,7 +253,7 @@ impl PokerBot for TourneyBot {
 
 
 
-        if opp_pips > 10 {
+        if opp_pip > 10 {
             match best_hand {
                 ShowdownHand::Flush(cards) | ShowdownHand::FourOfAKind(cards) | ShowdownHand::FullHouse(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
                     Action::Raise(raise_amount(rng.gen_range(0.5,1.5) * pot_total as f64))
@@ -327,7 +327,7 @@ impl PokerBot for TourneyBot {
                     checkcall()
                 },
                 ShowdownHand::Pair(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(rng.gen_range() * pot_total as f64)) // Don't bet too much on it being a straight
+                    Action::Raise(raise_amount(rng.gen_range(0.4,1.0) * pot_total as f64)) // Don't bet too much on it being a straight
                 } else {
                     checkcall()
                 },
