@@ -106,7 +106,7 @@ impl PokerBot for TourneyBot {
             };
 
             let orel = self.relations.clone();
-            
+
             if my_hand.is_same_type(&opp_hand) {
                 // We only actually gain information if our hands are the same type
 
@@ -167,7 +167,7 @@ impl PokerBot for TourneyBot {
                             my_hand
                         } else {
                             opp_hand
-                        }; 
+                        };
 
                         match hand {
                             ShowdownHand::Straight(cards) | ShowdownHand::StraightFlush(cards) | ShowdownHand::RoyalFlush(cards) => {
@@ -266,8 +266,8 @@ impl PokerBot for TourneyBot {
                 checkcall()
             },
             ShowdownHand::Flush(cards) if rs.street > 3 => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                if rng.gen_bool(0.6) {
-                    Action::Raise(raise_amount(0.75 * my_stack as f64))
+                if rng.gen_bool(0.8) {
+                    Action::Raise(raise_amount(rng.gen_range(0.75,2.5) * my_stack as f64))
                 } else {
                     Action::Raise(raise_amount(0.25 * my_stack as f64))
                 }
@@ -275,18 +275,20 @@ impl PokerBot for TourneyBot {
                 checkcall()
             },
             // Shadow pair
-            ShowdownHand::Pair(cards) if rs.street == 0 && gs.round_num > 200 => if (legal_actions & ActionType::RAISE).bits() != 0 {
+            ShowdownHand::Pair(cards) if rs.street == 0 => if (legal_actions & ActionType::RAISE).bits() != 0 {
                 let value = cards[0].value();
                 let strength = self.ordering.iter().position(|x| x == &value).unwrap();
-                if rng.gen_bool(strength as f64 / 13.0) {
-                    Action::Raise(raise_amount(0.25 * pot_total as f64))
+                if (gs.round_num > 200) {
+                    Action::Raise(raise_amount(0.3 * pot_total as f64))
+                } else if rng.gen_bool(strength as f64 / 13.0 + 0.05) {
+                    Action::Raise(raise_amount(rng.gen_range(0.8,1.4) * pot_total as f64))
                 } else {
-                    let amount = 0.10 * (strength as f64 / 13.0) * pot_total as f64;
-                    let [mi, mx] = rs.raise_bounds();
-                    if (mi as f64) < amount && amount < mx as f64 && rand::random() {
+                    let amount = 0.3 * (strength as f64 / 13.0) * pot_total as f64;
+                    let [_, mx] = rs.raise_bounds();
+                    if amount < mx as f64 && rand::random() {
                         Action::Raise(raise_amount(amount))
                     } else {
-                        checkfold() // It isn't a very strong hand
+                        checkcall() // It isn't a very strong hand
                     }
                 }
             } else {
