@@ -124,7 +124,112 @@ impl PokerBot for TourneyBot {
             Action::Fold
         };
 
-        checkfold()
+        let checkcall = || if (legal_actions & ActionType::CHECK).bits() != 0 {
+            Action::Check
+        } else {
+            Action::Call
+        };
+
+        let raise_amount = |amount: f64| {
+            let amount = amount as i64;
+            let [rb_min, rb_max] = rs.raise_bounds();
+            if amount < rb_min { rb_min }
+            else if amount > rb_max { rb_max }
+            else { amount }
+        };
+
+
+
+        if opp_pip > 10 {
+            match best_hand {
+                ShowdownHand::Flush(cards) | ShowdownHand::FourOfAKind(cards) | ShowdownHand::FullHouse(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(rng.gen_range(0.5,1.5) * pot_total as f64))
+                } else {
+                    checkcall()
+                },
+                _ => checkfold()
+            }
+        } else {
+            // Always fold if all we detect is a "low" high card
+            match best_hand {
+                // Our ace in the hole: predicting straights
+                ShowdownHand::Straight(cards) if gs.round_num > 500 => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
+                } else {
+                    checkcall()
+                },
+                // Flushes
+                ShowdownHand::Flush(cards) if rs.street == 3 => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(0.25 * pot_total as f64))
+                } else {
+                    checkcall()
+                },
+                ShowdownHand::Flush(cards) if rs.street > 3 => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    if rng.gen_bool(0.8) {
+                        Action::Raise(raise_amount(rng.gen_range(0.75,2.5) * my_stack as f64))
+                    } else {
+                        Action::Raise(raise_amount(0.25 * my_stack as f64))
+                    }
+                } else {
+                    checkcall()
+                },
+                ShowdownHand::FourOfAKind(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
+                } else {
+                    checkcall()
+                },
+                ShowdownHand::FullHouse(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
+                } else {
+                    checkcall()
+                },
+                ShowdownHand::ThreeOfAKind(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
+                } else {
+                    checkcall()
+                },
+                ShowdownHand::TwoPair(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
+                } else {
+                    checkcall()
+                },
+                // Shadow pair
+                ShowdownHand::Pair(cards) if rs.street == 0 => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    let value = cards[0].value();
+                    let strength = self.ordering.iter().position(|x| x == &value).unwrap();
+                    if (gs.round_num > 200) {
+                        Action::Raise(raise_amount(0.3 * pot_total as f64))
+                    } else if rng.gen_bool(strength as f64 / 13.0 + 0.05) {
+                        Action::Raise(raise_amount(rng.gen_range(0.8,1.4) * pot_total as f64))
+                    } else {
+                        let amount = rng.gen_range(0.15,0.35) * (strength as f64 / 13.0) * pot_total as f64;
+                        let [_, mx] = rs.raise_bounds();
+                        if amount < mx as f64 && rand::random() {
+                            Action::Raise(raise_amount(amount))
+                        } else {
+                            checkcall() // It isn't a very strong hand
+                        }
+                    }
+                } else {
+                    checkcall()
+                },
+                ShowdownHand::Pair(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
+                    Action::Raise(raise_amount(rng.gen_range(0.4,1.0) * pot_total as f64)) // Don't bet too much on it being a straight
+                } else {
+                    checkcall()
+                },
+                ShowdownHand::HighCard(card) if gs.round_num > 200 => {
+                    // we have a pretty good idea of what's high and low, so fold if it's low
+                    if self.ordering.iter().position(|x| x == &card.value()).map(|x| x < 10).unwrap_or(false) {
+                        Action::Fold
+                    } else {
+                        checkcall()
+                    }
+                },
+                ShowdownHand::HighCard(card) => checkcall(),
+                _ => checkfold() // Try to exit the game if we dont handle the hand
+            }
+        }
     }
 }
 
