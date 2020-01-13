@@ -1,1 +1,1 @@
-CARGO_INCREMENTAL=1 cargo +nightly build --offline --frozen --release --lib
+CARGO_INCREMENTAL=1 cargo build --offline --frozen --release --lib

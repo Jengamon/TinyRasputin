@@ -75,7 +75,7 @@ fn main() -> std::io::Result<()> {
                 let (pre, chars) = read_cv_array(chars);
                 let (post, _) = read_cv_array(chars);
                 pre.into_iter().map(|x| (x, value)).chain(post.into_iter().map(|x| (value, x))).collect::<Vec<_>>()
-            }).collect::<Vec<_>>();
+            }).collect::<Vec<_>>().remove_redundancies();
             let simplified = relations.simplify();
 
             let commands = line.split(",").map(|x| x.trim().to_string());

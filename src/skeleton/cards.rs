@@ -8,11 +8,11 @@ use std::error::Error;
 use itertools::Itertools;
 
 /// Encodes card suit
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub enum CardSuit {
+    Spades,
     Hearts,
     Diamonds,
-    Spades,
     Clubs,
 }
 
@@ -119,10 +119,10 @@ impl fmt::Display for CardValue {
 }
 
 /// Encodes a valid poker card
-#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, PartialOrd, Ord)]
 pub struct Card {
-    suit: CardSuit,
     value: CardValue,
+    suit: CardSuit,
 }
 
 impl Card {
@@ -148,8 +148,9 @@ impl FromStr for Card {
         } else if s.len() < 2 {
             return Err(CardConversionError::NotACard(s.to_string()))
         }
-        let value = s[..=0].parse::<CardValue>()?;
-        let suit = s[1..].parse::<CardSuit>()?;
+        let mut chars = s.chars();
+        let value = chars.next().map(|x| x.to_string()).unwrap().parse::<CardValue>()?;
+        let suit = chars.next().map(|x| x.to_string()).unwrap().parse::<CardSuit>()?;
         Ok(Card { suit, value })
     }
 }
