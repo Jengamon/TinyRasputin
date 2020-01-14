@@ -1,5 +1,7 @@
-use super::super::skeleton::{
-    cards::{CardValue, Card, CardSuit},
+use crate::{
+    skeleton::{
+        cards::{CardValue, Card, CardSuit},
+    },
 };
 
 use std::cmp::{PartialEq, Eq, PartialOrd, Ord, Ordering};
@@ -379,7 +381,7 @@ impl ShowdownEngine {
             }
         }
 
-        // println!("Hand: [{}]", best_hand!(hands).into_iter().format(", "));
+        // debug_println!("Hand: [{}]", best_hand!(hands).into_iter().format(", "));
 
         let hand = best_hand!(hands);
         if hand.len() > 0 {
@@ -461,7 +463,7 @@ impl ShowdownEngine {
             } else {
                 None
             }))
-            // .inspect(|hand| println!("Found hand {}", hand))
+            // .inspect(|hand| debug_println!("Found hand {}", hand))
             .fold((vec![], HashSet::new()), |(mut hands, seen), hand| {
                 let cards = hand.cards();
                 if !seen.is_superset(&cards) {
@@ -521,7 +523,7 @@ impl ShowdownEngine {
             sorted_bins[i] = hand.iter().filter(|x| (i - 1) == self.ordering.iter().position(|y| *y == x.value()).unwrap()).collect();
         }
         sorted_bins[0] = sorted_bins[13].clone();
-        // println!("Bins: {}", sorted_bins.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
+        // debug_println!("Bins: {}", sorted_bins.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
         sorted_bins.windows(5).flat_map(|x| {
             let holes = x.iter().filter(|x| x.is_empty()).count();
             // All 5 bins in a row are full, we have at least one straight
@@ -616,7 +618,7 @@ impl ShowdownEngine {
         for i in 0..13 {
             sorted_bins[i] = hand.iter().filter(|x| i == self.ordering.iter().position(|y| *y == x.value()).unwrap()).collect();
         }
-        // println!("Bins: {}", sorted_bins.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
+        // debug_println!("Bins: {}", sorted_bins.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
         let potential_oak: Vec<HashSet<_>> = sorted_bins.iter().cloned().filter_map(|x| if x.len() >= number {
             Some(x.into_iter().cloned().collect())
         } else {

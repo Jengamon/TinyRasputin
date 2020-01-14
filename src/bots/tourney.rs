@@ -20,7 +20,8 @@ use std::cell::{RefCell, Cell};
 use std::borrow::Borrow;
 
 const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
-const MAX_MULTIPLIER: f64 = 10.0;
+const RAISE_HAPPY: f64 = 0.7;
+const RAISE_CAUTIOUS: f64 = 0.3;
 
 pub struct TourneyBot {
     ordering: [CardValue; 13],
@@ -28,6 +29,9 @@ pub struct TourneyBot {
     // A relations cache, so we only recalculate when something changes
     relations: RefCell<Vec<(CardValue, CardValue)>>,
     relations_dirty: Cell<bool>,
+
+    // Learn your opponent to learn what you should do
+    opponent_raise_count: i64,
 }
 
 impl Default for TourneyBot {
@@ -37,15 +41,17 @@ impl Default for TourneyBot {
             prob_engine: ProbabilityEngine::new(),
             relations: RefCell::new(vec![]),
             relations_dirty: Cell::new(false),
+            opponent_raise_count: 0,
         }
     }
 }
 
 impl TourneyBot {
     fn add_relationship<S>(&mut self, log_string: S, strength: f64, a: CardValue, b: CardValue) where S: Borrow<str> {
-        println!("[{}] Saw relationship {} -> {} with strength {}...", log_string.borrow(), a, b, strength);
-        self.prob_engine.update(&a, &b, strength);
-        self.relations_dirty.set(true);
+        if self.prob_engine.update(log_string.borrow(), &a, &b, strength) {
+            println!("[{}] Saw relationship {} -> {} with strength {}...", log_string.borrow(), a, b, strength);
+            self.relations_dirty.set(true);
+        }
     }
 
     fn relations(&self) -> Vec<(CardValue, CardValue)> {
@@ -63,14 +69,14 @@ impl PokerBot for TourneyBot {
         println!("Round #{} time {} ({})", gs.round_num, gs.game_clock, gs.bankroll);
         let relations = self.relations();
         let sample_space_size = relations.possibilities();
-        println!("Sample space size -> {}", sample_space_size.to_formatted_string(&Locale::en));
+        // println!("Sample space size -> {}", sample_space_size.to_formatted_string(&Locale::en));
         // In the unlikely event we actually calculate a "for certain" ordering, just keep it until we violate it enough
         if sample_space_size > SAMPLE_GUESS_THRESHOLD {
             let new_order = generate_ordering(&relations);
             // TODO Add relations that we are sure of
             self.ordering = new_order;
         }
-        println!("Ordering: [{}]", self.ordering.iter().format(","));
+        // println!("Ordering: [{}]", self.ordering.iter().format(","));
         //println!("Round bot state: {:?}", self);
     }
 
@@ -106,8 +112,8 @@ impl PokerBot for TourneyBot {
             p_cards.extend(board_cards.iter());
             o_cards.extend(board_cards.iter());
 
-            let my_hand = showdown_engine.process_hand(&p_cards);
-            let opp_hand = showdown_engine.process_hand(&o_cards);
+            let my_hand = showdown_engine.process_hand_no_straight(&p_cards);
+            let opp_hand = showdown_engine.process_hand_no_straight(&o_cards);
             let (winner, loser) = if my_delta > 0 {
                 (my_hand.clone(), opp_hand.clone())
             } else if my_delta < 0 {
@@ -145,9 +151,9 @@ impl PokerBot for TourneyBot {
                     if delta != 0 && my_delta != 0 {
                         match (actual_winner, actual_loser) {
                             // Same hand type relations
-                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (_, _) => {}
                         }
                     }
@@ -190,13 +196,14 @@ impl PokerBot for TourneyBot {
                     if my_delta != 0 {
                         for winning_card in winner_hand.into_iter() {
                             for losing_card in loser_hand.into_iter() {
-                                self.add_relationship("hc -> hc", 0.25, losing_card.value(), winning_card.value());
+                                // self.add_relationship("hc -> hc", 0.25, losing_card.value(), winning_card.value());
+                                self.add_relationship("hc -> hc", my_delta.signum() as f64 * 0.99, losing_card.value(), winning_card.value());
                             }
                         }
                     } else {// In case of a draw, the high card is a board card, but this is very unlikely
                         let high_card = showdown_engine.highest_card(board_cards);
                         for card in winner_hand.into_iter().chain(loser_hand.into_iter()) {
-                            self.add_relationship("(draw) hc -> hc", 0.1, card.value(), high_card.value())
+                            self.add_relationship("(draw) hc -> hc", my_delta.signum() as f64 * 0.1, card.value(), high_card.value())
                         }
                     }
                 }
@@ -221,10 +228,17 @@ impl PokerBot for TourneyBot {
         let pot_total = my_contrib + opp_contrib;
         let mut rng = rand::thread_rng();
 
-        println!("Pot {} my stack {} opp stack {} CC {}", pot_total, my_stack, opp_stack, continue_cost);
+        // if opp_pip > my_pip {
+        //     // Detect an opponent raise?
+        //     println!("Opponent raised, not us");
+        //     self.opponent_raise_count += 1;
+        // }
+
+        // println!("Pot {} my stack {} opp stack {} CC {}", pot_total, my_stack, opp_stack, continue_cost);
         println!("My cards [{}]", my_cards.iter().format(", "));
         println!("Board cards [{}]", board_cards.iter().format(", "));
         let showdown_engine = ShowdownEngine::new(self.ordering);
+
         let my_best = showdown_engine.process_hand(&vec![my_cards.iter().as_slice(), board_cards].into_iter().flat_map(|x: &[Card]| x.iter().copied()).collect::<Vec<Card>>());
         let raise: f64 = if let Some(board_cards) = Some(board_cards).filter(|x| !x.is_empty()) {
             // Flop, Turn, or River (we have some board information)
@@ -254,14 +268,19 @@ impl PokerBot for TourneyBot {
                 },
                 hand => {
                     // Generate a percent from what we think 
-                    let possibilities = self.relations().possibilities() as f64 / ;
-                    let card_score = my_cards.into_iter().map(|x| self.ordering.iter().position(|y| y == &x)).sum();
+                    let possibilities = self.relations().possibilities();
+                    let card_score: usize = my_cards.into_iter().map(|x| self.ordering.iter().position(|y| y == &x.value()).unwrap()).sum();
                     let strength = card_score as f64 / 24.0;
-                    let balance = possibilities / 6_227_020_800;
+                    let balance = possibilities as f64 / 6_227_020_800.0f64;
                     if strength > 12.0 {
-                        if rng.gen_bool(1.0 - 0.5 / balance) {
-                            println!("Betting randomly on {}" hand);
-                            rng.gen_range(card_score, (6_227_020_800.0 / possibilities as f64).min(MAX_MULTIPLIER) * card_score) * pot_total as f64
+                        let strength = strength - 12.0;
+                        rng.gen_range(if balance == 1.0 { 0.0 } else { balance } * strength, strength) * pot_total as f64
+                    } else {
+                        // Is it worth it? Right now, we only bet on high cards as long as the continue cost is less than 50 and our stack is more than 100
+                        if continue_cost < 50 && my_stack > 100 {
+                            rng.gen_range(0.0, 50.0)
+                        } else {
+                            0.0
                         }
                     }
                 }
@@ -270,8 +289,16 @@ impl PokerBot for TourneyBot {
 
         println!("Raise worth: {}", raise);
 
-        if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
-            // Raise by the amount we calculated
+        let raise = raise as i64;
+
+        let act = |fail_action| if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+            Action::Check
+        } else {
+            fail_action
+        };
+
+        if raise > continue_cost {
+            // Bound the raise
             let [rb_min, rb_max] = rs.raise_bounds();
             let raise = if (raise as i64) > rb_max {
                 rb_max
@@ -280,20 +307,47 @@ impl PokerBot for TourneyBot {
             } else {
                 raise as i64
             };
-            Action::Raise(raise)
-        } else {
-            // we can only check call or fold
-            // Here opponent behavior would be nice to know
-            // But just look at how much we *would* raise if we could
-            // Check if we are able to, otherwise, look at how much we would have to call.
-            if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
-                Action::Check
+
+            // We think this hand is worth it!
+            if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
+                Action::Raise(raise)
             } else {
-                if continue_cost > raise as i64 {
-                    // We don't think it's worth enough to raise. We should fold
-                    Action::Fold
+                act(Action::Call)
+            }
+        } else {
+            // Gain some data points
+            if gs.round_num > 100 {
+                let opr = (self.opponent_raise_count as f64 / gs.round_num as f64).min(1.0);
+                println!("Opponent Raise Percent: {}%", opr * 100.0);
+                if opr > RAISE_HAPPY {
+                    // Our opponent is relatively raise happy. Them raising tells us nothing. ignore them and call their bluffs
+                    if rng.gen_bool(opr) {
+                        act(Action::Call)
+                    } else {
+                        // welp, we gotta hedge our bets somewhere
+                        act(Action::Fold)
+                    }
+                } else if opr < RAISE_CAUTIOUS {
+                    // Our oppnent is relatively raise cautious. Them raising means they got something. Be cautious.
+                    if rng.gen_bool(opr) {
+                        act(Action::Fold)
+                    } else {
+                        act(Action::Call)
+                    }
                 } else {
-                    Action::Call
+                    // Our opponent is a normal goddamn person. Act normal. Flip a coin. That our their an allin bot, and we don't have enough information
+                    if rand::random() {
+                        act(Action::Fold)
+                    } else {
+                        act(Action::Call)
+                    }
+                }
+            } else {
+                // Assume the worst
+                if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
+                    Action::Raise(raise)
+                } else {
+                    act(Action::Fold)
                 }
             }
         }
