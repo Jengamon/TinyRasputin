@@ -31,8 +31,8 @@ impl ProbabilityEngine {
     // Avoid using certainty 1.0 or -1.0
     // Also, the more relations we see, the weaker the certainty becomes
     pub fn update<B: AsRef<str>>(&mut self, name: B, a: &CardValue, b: &CardValue, certainty: f64) -> bool {
-        println!("[ProbEngine] Called with {} -> {} (certainty {})", a, b, certainty);
         assert!(name.as_ref() != "", "Cannot name a rule an empty string");
+        println!("[ProbEngine {}] Called with {} -> {} (certainty {})", name.as_ref(), a, b, certainty);
         self._update(name, a, b, certainty)
     }
 
@@ -102,6 +102,10 @@ impl ProbabilityEngine {
         self.seen.borrow().get(&(*a, *b)).map(|(_, _, n)| n.clone()).unwrap_or(vec![])
     }
 
+    pub fn inconsistent_rule_names(&self) -> Vec<String> {
+        self.inconsistent_rules.borrow().iter().cloned().collect()
+    }
+
     pub fn relations(&self) -> Vec<(CardValue, CardValue)> {
         let mut probs: Vec<_> = self.probabilities().into_iter().map(|((a, b), p)| if p < 0.0 { ((b, a), -p) } else { ((a, b), p) }).collect();
         // Invariant is the fact that no probability should be NaN
@@ -162,12 +166,12 @@ impl ProbabilityEngine {
                         .max_by(|a, b| a.partial_cmp(b).unwrap());
                     if let Some(mx) = mx {
                         if mx > CONFIRMATION_THRESHOLD {
-                            // println!("Using relationship {} -> {} with confidence {}", a, b, mx + EPSILON);
+                            println!("[Transitive] Using relationship {} -> {} with confidence {}", a, b, mx + EPSILON);
                             proposal.push(((a, b), mx + EPSILON));
                         } else {
-                            // if mx != 0.0 { // We don't generate relations that we aren't confident in at all
-                            //     // println!("Could generate relation {} -> {}, but fails confidence check...({})", a, b, mx);
-                            // }
+                            if mx != 0.0 { // We don't generate relations that we aren't confident in at all
+                                println!("Could generate relation {} -> {}, but fails confidence check...({})", a, b, mx);
+                            }
                             proposal.push(guess(a, b, p));
                         }
                     } else {

@@ -360,5 +360,9 @@ impl Drop for TourneyBot {
         println!("Final relations:\n{}", relations.debug_relations());
         println!("Final ordering: [{}]", self.ordering.iter().format(""));
         println!("Probability engine:\n{}", self.prob_engine.probabilities().into_iter().map(|((a, b), p)| format!("{} -> {} P({})", a, b, p)).format("\n"));
+        let ignored_rules = self.prob_engine.inconsistent_rule_names();
+        for rule in ignored_rules {
+            println!("You should check rule [{}] for inconsistencies.", rule);
+        }
     }
 }
