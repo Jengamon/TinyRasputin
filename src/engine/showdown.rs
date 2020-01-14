@@ -638,7 +638,7 @@ impl ShowdownEngine {
         oa.cmp(&ob)
     }
 
-    fn highest_card<H, C: Borrow<Card> + Copy, I>(&self, hand: H) -> Card where H: IntoIterator<Item=C, IntoIter=I>, I: Iterator<Item=C> {
+    pub fn highest_card<H, C: Borrow<Card> + Copy, I>(&self, hand: H) -> Card where H: IntoIterator<Item=C, IntoIter=I>, I: Iterator<Item=C> {
         *hand.into_iter()
             .map(|x| (x, self.ordering.iter().position(|y| *y == x.borrow().value())))
             .max_by(|x, y| x.1.cmp(&y.1))
@@ -729,7 +729,7 @@ impl ShowdownEngine {
                 _ => Ordering::Greater
             },
             Hand::Straight(ref a) => match b {
-                Hand::RoyalFlush(..) | Hand::StraightFlush(..) | Hand::FourOfAKind(..) | Hand::FullHouse(..) | Hand::Flush(..) 
+                Hand::RoyalFlush(..) | Hand::StraightFlush(..) | Hand::FourOfAKind(..) | Hand::FullHouse(..) | Hand::Flush(..)
                     => Ordering::Less,
                 Hand::Straight(ref b) => resolve_conflict(a, b),
                 _ => Ordering::Greater

@@ -26,26 +26,29 @@ impl ProbabilityEngine {
     // Avoid using certainty 1.0 or -1.0
     // Also, the more relations we see, the weaker the certainty becomes
     pub fn update(&mut self, a: &CardValue, b: &CardValue, certainty: f64) {
+        use rand::Rng;
         assert!(certainty > -1.0 && certainty < 1.0);
 
+        let mut rng = rand::thread_rng();
+
         if a != b && certainty != 0.0 {
+            let (certainty, a, b) = if a < b { (certainty, a, b) } else { (-certainty, b, a) };
             let relations = self.relations();
 
-            let transitive = relations.iter().filter(|(a2, b2)| {
-                let (_, mut post, _) = relationships(&relations, &a2);
-                let (mut pre, _, _) = relationships(&relations, &b2);
-                post.any(|x| x == *b) && pre.any(|x| x == *a) && !(a == a2 && b == b2)
-            }).inspect(|(a, b)| println!("Transitively saw {} -> {}", a, b));
+            // let transitive = relations.iter().filter(|(a2, b2)| {
+            //     let (_, mut post, _) = relationships(&relations, &a2);
+            //     let (mut pre, _, _) = relationships(&relations, &b2);
+            //     post.any(|x| x == *b) && pre.any(|x| x == *a) && !(a == a2 || b == b2)
+            // }).inspect(|(a, b)| println!("Transitively saw {} -> {}", a, b));
 
-            for (a, b) in transitive {
-                self.update(a, b, certainty);
-            }
+            // for (a, b) in transitive {
+            //     self.update(a, b, certainty);
+            // }
 
-            let (certainty, a, b) = if a < b { (certainty, a, b) } else { (-certainty, b, a) };
             let mut seen = self.seen.borrow_mut();
             let (probability, reps) = seen.entry((*a, *b)).or_insert((0.0, 0));
             *reps += 1;
-            *probability += (certainty.abs() / *reps as f64) * (certainty.signum() - *probability);
+            *probability += certainty.abs() * (if *reps > 1 {rng.gen_range(1, *reps)} else {1} as f64  / *reps as f64) * (certainty.signum() - *probability);
 
             assert!(!probability.is_nan());
         }
@@ -202,7 +205,7 @@ impl ProbabilityEngine {
                     }) + post_a_total;
 
                     println!("State: P(-> {1}) = {2} / {3} P({0} ->) = {4} / {5} P({0} -> | -> {1}) = {6}", a, b, pre_b_count, pre_b_total, post_a_count, post_a_total, p_post_a_pre_b);
-                    println!("Relations pre {0}&{1} [{2}] pre{0}|{1} [{3}] post {0}|{1} [{4}] post {0}&{1} [{5}]", a, b, 
+                    println!("Relations pre {0}&{1} [{2}] pre{0}|{1} [{3}] post {0}|{1} [{4}] post {0}&{1} [{5}]", a, b,
                         pre_ab.clone().format(""), pre_a_or_b.clone().format(""), post_a_or_b.clone().format(""), post_ab.clone().format(""));
                     let p = if pre_b_total == 0 {
                         // B is an orphan or initial (we have no information on what is in front of B)
@@ -245,7 +248,7 @@ impl ProbabilityEngine {
                 }
                 proposal
             });
-        
+
         let mut final_ = proposal;
         // Eliminate loops, starting from our least confident guesses
         let mut run_count = 0;
