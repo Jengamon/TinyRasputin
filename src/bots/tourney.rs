@@ -9,6 +9,7 @@ use tinyrasputin::{
         showdown::{ShowdownEngine, Hand, PotentialHand},
         probability::ProbabilityEngine,
         relations::{generate_ordering, detect_cycles, RelationsExt, relationships},
+        guess::{Guess},
     },
     skeleton::cards::Card,
 };
@@ -32,6 +33,7 @@ pub struct TourneyBot {
 
     // Learn your opponent to learn what you should do
     opponent_raise_count: i64,
+    running_guess: Guess,
 }
 
 impl Default for TourneyBot {
@@ -42,15 +44,18 @@ impl Default for TourneyBot {
             relations: RefCell::new(vec![]),
             relations_dirty: Cell::new(false),
             opponent_raise_count: 0,
+            running_guess: Guess::new(),
         }
     }
 }
 
 impl TourneyBot {
     fn add_relationship<S>(&mut self, log_string: S, strength: f64, a: CardValue, b: CardValue) where S: Borrow<str> {
+        self.running_guess.update(a, b, strength as f32);
         if self.prob_engine.update(log_string.borrow(), &a, &b, strength) {
             println!("[{}] Saw relationship {} -> {} with strength {}...", log_string.borrow(), a, b, strength);
-            self.relations_dirty.set(true);
+            //self.relations_dirty.set(true);
+            self.running_guess.update(a,b);
         }
     }
 
@@ -72,7 +77,8 @@ impl PokerBot for TourneyBot {
         // println!("Sample space size -> {}", sample_space_size.to_formatted_string(&Locale::en));
         // In the unlikely event we actually calculate a "for certain" ordering, just keep it until we violate it enough
         if sample_space_size > SAMPLE_GUESS_THRESHOLD {
-            let new_order = generate_ordering(&relations);
+            // let new_order = generate_ordering(&relations);
+            let new_order = generate_ordering(&vec![]);
             // TODO Add relations that we are sure of
             self.ordering = new_order;
         }
@@ -140,20 +146,23 @@ impl PokerBot for TourneyBot {
                         }
                     } else {
                         // We were incorrect or drew
-                        match delta {
-                            -1 => (my_showdown_hand, opp_showdown_hand),
+                        match my_delta.signum() {
+                            1 => (my_showdown_hand, opp_showdown_hand),
                             _ => (opp_showdown_hand, my_showdown_hand)
                         }
                     };
 
                     println!("Winner hand: {} Loser hand: {}", actual_winner, actual_loser);
 
-                    if delta != 0 && my_delta != 0 {
+                    if my_delta != 0 {
                         match (actual_winner, actual_loser) {
                             // Same hand type relations
                             (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::FullHouse(winner), Hand::FullHouse(loser)) => {
+                                add_relationship("fh -> fh", 0.9, )
+                            },
                             (_, _) => {}
                         }
                     }
@@ -197,10 +206,10 @@ impl PokerBot for TourneyBot {
                         for winning_card in winner_hand.into_iter() {
                             for losing_card in loser_hand.into_iter() {
                                 // self.add_relationship("hc -> hc", 0.25, losing_card.value(), winning_card.value());
-                                self.add_relationship("hc -> hc", my_delta.signum() as f64 * 0.99, losing_card.value(), winning_card.value());
+                                self.add_relationship("hc -> hc", 0.25, losing_card.value(), winning_card.value());
                             }
                         }
-                    } else {// In case of a draw, the high card is a board card, but this is very unlikely
+                    } else { // In case of a draw, the high card is a board card, but this is very unlikely
                         let high_card = showdown_engine.highest_card(board_cards);
                         for card in winner_hand.into_iter().chain(loser_hand.into_iter()) {
                             self.add_relationship("(draw) hc -> hc", my_delta.signum() as f64 * 0.1, card.value(), high_card.value())
@@ -267,7 +276,7 @@ impl PokerBot for TourneyBot {
                     rng.gen_range(0.7, 1.5) * pot_total as f64
                 },
                 hand => {
-                    // Generate a percent from what we think 
+                    // Generate a percent from what we think
                     let possibilities = self.relations().possibilities();
                     let card_score: usize = my_cards.into_iter().map(|x| self.ordering.iter().position(|y| y == &x.value()).unwrap()).sum();
                     let strength = card_score as f64 / 24.0;
@@ -358,6 +367,7 @@ impl Drop for TourneyBot {
     fn drop(&mut self) {
         let relations = self.relations();
         println!("Final relations:\n{}", relations.debug_relations());
+        println!("Final guess:\n{:?}", self.running_guess);
         println!("Final ordering: [{}]", self.ordering.iter().format(""));
         println!("Probability engine:\n{}", self.prob_engine.probabilities().into_iter().map(|((a, b), p)| format!("{} -> {} P({})", a, b, p)).format("\n"));
         let ignored_rules = self.prob_engine.inconsistent_rule_names();

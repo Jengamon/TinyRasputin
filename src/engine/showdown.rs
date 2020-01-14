@@ -272,6 +272,10 @@ impl ShowdownEngine {
         })
     }
 
+    pub fn counts<'a, H, C: Borrow<Card>>(hand: H) -> Vec<(usize, CardValue)> where H: 'a + Iterator<Item = C> {
+        todo!()
+    }
+
     // Only for consistency checking
     pub fn all_possible_hands(&self, hand: &[Card], straights: bool) -> Vec<PotentialHand> {
         // Brutely detect all hands, so every 4K will have 3 pairs, every 3K will have 2 pair and so on
