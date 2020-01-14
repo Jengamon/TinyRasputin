@@ -1,12 +1,12 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput, BenchmarkId};
 use itertools::Itertools;
 use tinyrasputin::{
     engine::{
-        showdown::{ShowdownEngine, Hand},
+        showdown::{ShowdownEngine},
         relations::{detect_cycles},
     },
     skeleton::cards::{CardValue, Card, CardSuit},
-    into_cards, into_ordering,
+    into_ordering,
 };
 use std::collections::HashSet;
 // use rand::prelude::*;
@@ -25,25 +25,39 @@ pub fn showdown_benchmark(c: &mut Criterion) {
             Card::new(suits[suit], values[value])
         }).collect::<Vec<_>>()
     }) {
-        let cards = ShowdownEngine::make_hand_unique(cards.into_iter());
+        let mut cards = ShowdownEngine::make_hand_unique(cards.into_iter());
         cards.sort_by(|a, b| a.cmp(b));
 
-        let mut group = c.benchmark_group(format!("{}", cards.iter().format(", ")));
+        let mut group = c.benchmark_group("Showdown Engine");
         let (mut hand, mut hand_all) = (None, None);
 
         group.throughput(Throughput::Elements(cards.len() as u64));
 
-        group.bench_with_input(BenchmarkId::new("Shortcut", cards), cards, |b, cards| b.iter(|| {
+        group.bench_with_input(BenchmarkId::new("Shortcut", cards.iter().format(", ")), &cards, |b, cards| b.iter(|| {
             hand = Some(showdown.process_hand(&cards));
         }));
 
-        group.bench_with_input(BenchmarkId::new("Complete", cards), cards, |b, cards| b.iter(|| {
+        group.bench_with_input(BenchmarkId::new("Complete", cards.iter().format(", ")), &cards, |b, cards| b.iter(|| {
             hand_all = Some(showdown.process_hand_all(&cards));
         }));
 
         let (hand, hand_all) = (hand.unwrap(), hand_all.unwrap());
 
         assert_eq!(hand, hand_all, "Shortcut said {}, while Complete said {}", hand, hand_all);
+
+        let (hand, hand_all) = (None, None);
+
+        group.bench_with_input(BenchmarkId::new("Shortcut No Straights", cards.iter().format(", ")), &cards, |b, cards| b.iter(|| {
+            hand = Some(showdown.process_hand_no_straight(&cards));
+        }));
+
+        group.bench_with_input(BenchmarkId::new("Complete No Straights", cards.iter().format(", ")), &cards, |b, cards| b.iter(|| {
+            hand_all = Some(showdown.process_hand_no_straight_all(&cards));
+        }));
+
+        let (hand, hand_all) = (hand.unwrap(), hand_all.unwrap());
+
+        assert_eq!(hand, hand_all, "Shortcut No Straights said {}, while Complete No Straights said {}", hand, hand_all);
 
         group.finish();
     }

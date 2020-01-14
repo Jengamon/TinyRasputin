@@ -3,11 +3,17 @@ mod bots;
 use clap::{App, Arg, SubCommand, AppSettings};
 use bots::*;
 use tinyrasputin::{
-    engine::relations::{RelationsExt},
-    skeleton::{runner::Runner, bot::PokerBot, cards::CardValue}
+    engine::{
+        relations::{RelationsExt},
+        showdown::{ShowdownEngine, PotentialHand, Hand}
+    },
+    skeleton::{runner::Runner, bot::PokerBot, cards::{CardValue, Card}},
+    into_ordering
 };
 use itertools::Itertools;
 use std::net::Ipv4Addr;
+use std::borrow::Borrow;
+use std::collections::HashSet;
 
 fn main() -> std::io::Result<()> {
     // read in arguments
@@ -62,12 +68,25 @@ fn main() -> std::io::Result<()> {
             (values, chars)
         }
 
+        fn parse_hand<B: Borrow<str>>(hand: &B) -> Option<PotentialHand> {
+            let parts: Vec<_> = hand.borrow().trim().split(" ").collect();
+            assert!(parts.len() > 0);
+            match parts[0] {
+                "Straight" => {
+                    let comps: HashSet<_> = parts[1..].into_iter().flat_map(|x| x.trim().parse::<Card>().into_iter()).collect();
+                    assert!(comps.len() == 5);
+                    Some(PotentialHand::Hand(Hand::Straight(comps)))
+                },
+                _ => None
+            }
+        }
+
         while !lines.is_empty() {
             let line: String = lines.remove(0).trim().to_string().to_ascii_lowercase();
             if line.starts_with("#") {
                 continue
             }
-            let relations: Vec<_> = lines.drain(0..13).flat_map(|x| {
+            let mut relations = || lines.drain(0..13).flat_map(|x| {
                 let mut chars = x.chars();
                 assert!(chars.next() == Some('|'));
                 let value = chars.next().map(|x| x.to_string().parse::<CardValue>().unwrap()).unwrap();
@@ -76,38 +95,55 @@ fn main() -> std::io::Result<()> {
                 let (post, _) = read_cv_array(chars);
                 pre.into_iter().map(|x| (x, value)).chain(post.into_iter().map(|x| (value, x))).collect::<Vec<_>>()
             }).collect::<Vec<_>>().remove_redundancies();
-            let simplified = relations.simplify();
 
-            let commands = line.split(",").map(|x| x.trim().to_string());
-            for command in commands {
-                match &command[..] {
-                    "simplify" => {
-                        println!("{}", simplified.debug_relations());
-                    },
-                    "count" => {
-                        println!("{}", relations.len());
-                    },
-                    "possibilities" => {
-                        println!("{}", simplified.possibilities());
-                    },
-                    "check" => {
-                        let order = lines.remove(0).chars().map(|c| c.to_string().parse::<CardValue>().unwrap()).collect::<Vec<_>>();
-                        assert!(order.len() == 13);
-                        println!("Correctness check for {}", order.iter().format(" -> "));
-                        println!("Rule count: {} ({})", relations.len(), simplified.len());
-                        let violations = simplified.iter().filter(|(a, b)| {
-                            let a_index = order.iter().position(|x| x == a);
-                            let b_index = order.iter().position(|x| x == b);
-                            b_index < a_index
-                        }).collect::<Vec<_>>();
-                        for (a, b) in violations.iter() {
-                            println!("Rule violation: {} -> {}", a, b);
+            match line.trim() {
+                "check" => {
+                    let relations = relations();
+                    let simplified = relations.simplify();
+                    let order = lines.remove(0).chars().map(|c| c.to_string().parse::<CardValue>().unwrap()).collect::<Vec<_>>();
+                    assert!(order.len() == 13);
+                    println!("Correctness check for {}", order.iter().format(" -> "));
+                    println!("Rule count: {} ({})", relations.len(), simplified.len());
+                    let violations = simplified.iter().filter(|(a, b)| {
+                        let a_index = order.iter().position(|x| x == a);
+                        let b_index = order.iter().position(|x| x == b);
+                        b_index < a_index
+                    }).collect::<Vec<_>>();
+                    for (a, b) in violations.iter() {
+                        println!("Rule violation: {} -> {}", a, b);
+                    }
+                    println!("Correctness: {}%", 100.0 * (1.0 - (violations.len() as f64 / simplified.len() as f64)));
+                    println!("Likelyhood of guessing correctly: {}%", 100.0 * (1.0 / simplified.possibilities() as f64));
+                    println!("Number of possibilities {}", simplified.possibilities());
+                },
+                "is_possible" => {
+                    let order = into_ordering!(vec lines.remove(0).chars().map(|c| c.to_string().parse::<CardValue>()).collect::<Vec<_>>());
+                    let count: usize = lines.remove(0).parse::<usize>().unwrap_or(0);
+                    let mut correct = 0;
+                    let engine = ShowdownEngine::new(order);
+                    if count > 0 {
+                        println!("Hand checking for {}", order.iter().format(" -> "));
+                        for hand in lines.drain(0..count) {
+                            if let Some(hand) = parse_hand(&hand) {
+                                let cards: Vec<_> = hand.cards().into_iter().collect();
+                                let possible_hands = engine.all_possible_hands(&cards, true);
+                                if !possible_hands.contains(&hand) {
+                                    println!("{} is an impossible hand.", hand)
+                                } else {
+                                    correct += 1;
+                                }
+                            } else {
+                                println!("Invalid hand {}. Skipping...", hand.trim());
+                            }
                         }
-                        println!("Correctness: {}%", 100.0 * (1.0 - (violations.len() as f64 / simplified.len() as f64)));
-                        println!("{}", relations.possibilities());
-                    },
-                    c => println!("Invalid command {}", c)
-                }
+                        if correct > 0 {
+                            println!("Percentage of possible hands to checked hands: {}%", (correct as f64 / count as f64) * 100.0);
+                        } else {
+                            println!("All hands incorrect or skipped");
+                        }
+                    }
+                },
+                c => println!("Invalid command {}", c)
             }
         }
         Ok(())

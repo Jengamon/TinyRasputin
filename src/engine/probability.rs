@@ -6,8 +6,10 @@ use crate::{
 use std::collections::HashMap;
 use std::cell::RefCell;
 use itertools::Itertools;
+use approx::relative_eq;
 
 const CONFIRMATION_THRESHOLD: f64 = 0.5;
+const EPSILON: f64 = std::f64::EPSILON;
 
 #[derive(Debug, Clone)]
 pub struct ProbabilityEngine {
@@ -24,27 +26,29 @@ impl ProbabilityEngine {
     // Avoid using certainty 1.0 or -1.0
     // Also, the more relations we see, the weaker the certainty becomes
     pub fn update(&mut self, a: &CardValue, b: &CardValue, certainty: f64) {
-        assert!(certainty > -1.0 && certainty < 1.0 && certainty != 0.0);
+        assert!(certainty > -1.0 && certainty < 1.0);
 
-        let relations = self.relations();
+        if a != b && certainty != 0.0 {
+            let relations = self.relations();
 
-        let transitive = relations.iter().filter(|(a2, b2)| {
-            let (_, mut post, _) = relationships(&relations, &a2);
-            let (mut pre, _, _) = relationships(&relations, &b2);
-            post.any(|x| x == *b) && pre.any(|x| x == *a) && !(a == a2 || b == b2)
-        }).inspect(|(a, b)| println!("Transitively saw {} -> {}", a, b));
+            let transitive = relations.iter().filter(|(a2, b2)| {
+                let (_, mut post, _) = relationships(&relations, &a2);
+                let (mut pre, _, _) = relationships(&relations, &b2);
+                post.any(|x| x == *b) && pre.any(|x| x == *a) && !(a == a2 && b == b2)
+            }).inspect(|(a, b)| println!("Transitively saw {} -> {}", a, b));
 
-        for (a, b) in transitive {
-            self.update(a, b, certainty);
+            for (a, b) in transitive {
+                self.update(a, b, certainty);
+            }
+
+            let (certainty, a, b) = if a < b { (certainty, a, b) } else { (-certainty, b, a) };
+            let mut seen = self.seen.borrow_mut();
+            let (probability, reps) = seen.entry((*a, *b)).or_insert((0.0, 0));
+            *reps += 1;
+            *probability += (certainty.abs() / *reps as f64) * (certainty.signum() - *probability);
+
+            assert!(!probability.is_nan());
         }
-
-        let (certainty, a, b) = if a < b { (certainty, a, b) } else { (-certainty, b, a) };
-        let mut seen = self.seen.borrow_mut();
-        let (probability, reps) = seen.entry((*a, *b)).or_insert((0.0, 0));
-        *reps += 1;
-        *probability += (certainty.abs() / *reps as f64) * (certainty.signum() - *probability);
-
-        assert!(!probability.is_nan());
     }
 
     pub fn likely_ordering(&self, a: &CardValue, b: &CardValue) -> Option<(CardValue, CardValue)> {
@@ -77,13 +81,66 @@ impl ProbabilityEngine {
         probs.sort_by(|(_, p1), (_, p2)| {
             p1.partial_cmp(&p2).unwrap()
         });
+        let guess = |a, b, p: f64| {
+            assert!(p >= 0.0);
+
+            // Try to find a -> b's "orderliness" which is simply the elements that are both post a and pre b / number of elemebnt that are either
+
+            let (_, post_a, _) = relationships(&probs.iter().copied().map(|(rel, _)| rel).collect::<Vec<_>>(), &a);
+            let (pre_b, _, _) = relationships(&probs.iter().copied().map(|(rel, _)| rel).collect::<Vec<_>>(), &b);
+            let total_relations = post_a.clone().chain(pre_b.clone()).filter(|ele| ele != &a && ele != &b).count();
+            let pertinent_relations = post_a.filter(|pa| pre_b.clone().any(|x| &x == pa)).filter(|ele| ele != &a && ele != &b).count();
+            assert!(pertinent_relations <= total_relations);
+
+            let orderliness = if total_relations > 0 {
+                pertinent_relations as f64 / total_relations as f64
+            } else {
+                EPSILON
+            };
+
+            if !relative_eq!(orderliness, 0.0, epsilon = EPSILON) {
+                println!("Relationship {} -> {} has orderliness {}", a, b, orderliness);
+            }
+
+            let p = p * orderliness;
+
+            if !relative_eq!(p, 0.0, epsilon = EPSILON) {
+                use rand::Rng;
+                let mut rng = rand::thread_rng();
+
+                let (a, b, p) = if rng.gen_bool(1.0 - p) {
+                    (b, a, 1.0 - p)
+                } else {
+                    (a, b, p)
+                };
+
+                let confidence = (p - 0.5).abs() / 2.0;
+                if relative_eq!(confidence, 0.0, epsilon = EPSILON) {
+                    println!("Using relationship {} -> {} with no confidence", a, b);
+                } else {
+                    println!("Using relationship {} -> {} with confidence {}", a, b, confidence);
+                }
+                ((a, b), confidence)
+            } else {
+                // We have no information on their relative ordering, so flip a coin
+                if rand::random() {
+                    println!("Using relationship {} -> {} with no confidence", a, b);
+                    ((a, b), 0.0)
+                } else {
+                    println!("Using relationship {} -> {} with no confidence", b, a);
+                    ((b, a), 0.0)
+                }
+            }
+        };
+
         // Make the most likely rules go first
         let proposal: Vec<((CardValue, CardValue), f64)> = probs.iter().copied()
             .rev()
             .fold(vec![], |mut proposal, ((a, b), p)| {
+                assert!(p >= 0.0);
                 // If we already selected a certain direction, make sure to confirm that direction
-                let (pre_a, post_a, viol_a) = relationships(&probs.iter().copied().map(|((a, b), p)| if p >= 0.0 { (a, b) } else { (b, a) }).collect::<Vec<_>>(), &a);
-                let (pre_b, post_b, viol_b) = relationships(&probs.iter().copied().map(|((a, b), p)| if p >= 0.0 { (a, b) } else { (b, a) }).collect::<Vec<_>>(), &b);
+                let (pre_a, post_a, viol_a) = relationships(&probs.iter().copied().map(|(rel, _)| rel).collect::<Vec<_>>(), &a);
+                let (pre_b, post_b, viol_b) = relationships(&probs.iter().copied().map(|(rel, _)| rel).collect::<Vec<_>>(), &b);
                 assert!(viol_a.clone().count() == 0, "Something is both pre and post: {}", viol_a.format(""));
                 assert!(viol_b.clone().count() == 0, "Something is both pre and post: {}", viol_b.format(""));
                 let pre_ab = pre_a.clone().filter(|x| pre_b.clone().any(|y| x == &y));
@@ -92,7 +149,6 @@ impl ProbabilityEngine {
                 // Otherwise, try to maximize pre_ab and post_ab
                 if pre_b.clone().any(|x| x == a) || post_a.clone().any(|x| x == b) {
                     // Find the highest confidence, add epsilon to it, and use that (confirmation confidence)
-                    let epsilon = 0.001;
                     let mx = proposal.iter().copied()
                         .filter(|_| pre_b.clone().any(|x| x == a) || post_a.clone().any(|x| x == b)) // Pertinent relations
                         .filter(|((a2, b2), _)| post_a.clone().any(|x| &x == b2) && pre_b.clone().any(|x| &x == a2)) // Do they really confirm our relation? ( are they in between? )
@@ -100,16 +156,16 @@ impl ProbabilityEngine {
                         .max_by(|a, b| a.partial_cmp(b).unwrap());
                     if let Some(mx) = mx {
                         if mx > CONFIRMATION_THRESHOLD {
-                            println!("Using relationship {} -> {} with confidence {}", a, b, mx + epsilon);
-                            proposal.push(((a, b), mx + epsilon));
+                            println!("Using relationship {} -> {} with confidence {}", a, b, mx + EPSILON);
+                            proposal.push(((a, b), mx + EPSILON));
                         } else {
                             if mx != 0.0 { // We don't generate relations that we aren't confident in at all
                                 println!("Could generate relation {} -> {}, but fails confidence check...({})", a, b, mx);
                             }
+                            proposal.push(guess(a, b, p));
                         }
                     } else {
-                        println!("Using relationship {} -> {} with no confidence", a, b);
-                        proposal.push(((a, b), 0.0));
+                        proposal.push(guess(a, b, p));
                     }
                 } else {
                     // NOTE: We assume that the events -> A & -> B and B -> & A -> are independant
@@ -186,28 +242,7 @@ impl ProbabilityEngine {
 
                     assert!(p >= 0.0);
 
-                    if p != 0.0 {
-                        use rand::Rng;
-                        let mut rng = rand::thread_rng();
-
-                        let (a, b) = if rng.gen_bool(1.0 - p) {
-                            (b, a)
-                        } else {
-                            (a, b)
-                        };
-
-                        println!("Using relationship {} -> {} with confidence {}", a, b, p);
-                        proposal.push(((a, b), p));
-                    } else {
-                        // We have no information on their relative ordering, so flip a coin
-                        if rand::random() {
-                            println!("Using relationship {} -> {} with no confidence", a, b);
-                            proposal.push(((a, b), 0.0));
-                        } else {
-                            println!("Using relationship {} -> {} with no confidence", b, a);
-                            proposal.push(((b, a), 0.0));
-                        }
-                    }
+                    proposal.push(guess(a, b, p));
                 }
                 proposal
             });

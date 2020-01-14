@@ -12,6 +12,7 @@ clap = "2.33"
 rand = "0.7"
 itertools = "0.8"
 num-format = "0.4"
+approx = "0.3"
 
 [dev-dependencies]
 criterion = "0.3"

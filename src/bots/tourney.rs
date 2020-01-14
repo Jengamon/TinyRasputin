@@ -4,16 +4,20 @@ use tinyrasputin::skeleton::{
     states::{STARTING_STACK, GameState, RoundState, TerminalState},
     cards::{CardValue, CardHandExt},
 };
-use tinyrasputin::engine::{
-    showdown::{ShowdownEngine, Hand},
-    probability::ProbabilityEngine,
-    relations::{generate_ordering, detect_cycles, RelationsExt, relationships},
+use tinyrasputin::{
+    engine::{
+        showdown::{ShowdownEngine, Hand, PotentialHand},
+        probability::ProbabilityEngine,
+        relations::{generate_ordering, detect_cycles, RelationsExt, relationships},
+    },
+    skeleton::cards::Card,
 };
 use std::cmp::Ordering;
 use rand::prelude::*;
 use itertools::Itertools;
 use num_format::{Locale, ToFormattedString};
 use std::cell::{RefCell, Cell};
+use std::borrow::Borrow;
 
 const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
 
@@ -37,17 +41,17 @@ impl Default for TourneyBot {
 }
 
 impl TourneyBot {
-    fn add_relationship(&mut self, strength: f64, a: CardValue, b: CardValue) {
-        println!("Saw relationship {} -> {} with strength {}...", a, b, strength);
+    fn add_relationship<S>(&mut self, log_string: S, strength: f64, a: CardValue, b: CardValue) where S: Borrow<str> {
+        println!("[{}] Saw relationship {} -> {} with strength {}...", log_string.borrow(), a, b, strength);
         self.prob_engine.update(&a, &b, strength);
         self.relations_dirty.set(true);
     }
 
     fn relations(&self) -> Vec<(CardValue, CardValue)> {
         if self.relations_dirty.get() {
-            self.relations_dirty.set(false);
             // Regenerate relations
             *self.relations.borrow_mut() = self.prob_engine.relations();
+            self.relations_dirty.set(false);
         }
         self.relations.borrow().iter().copied().collect()
     }
@@ -55,7 +59,7 @@ impl TourneyBot {
 
 impl PokerBot for TourneyBot {
     fn handle_new_round(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) {
-        println!("Round #{} time {}", gs.round_num, gs.game_clock);
+        println!("Round #{} time {} ({})", gs.round_num, gs.game_clock, gs.bankroll);
         let relations = self.relations();
         let sample_space_size = relations.possibilities();
         println!("Sample space size -> {}", sample_space_size.to_formatted_string(&Locale::en));
@@ -77,6 +81,18 @@ impl PokerBot for TourneyBot {
         let ref opp_cards = previous_state.hands[1 - player_index];
         let ref board_cards = previous_state.deck.0[..street as usize];
         println!("Cards: {} {} <{}>", my_cards.print(), opp_cards.print(), board_cards.iter().format(", "));
+        let print_prediction = |my_hand, opp_hand, delta| {
+            let state = |n| if n > 0 {
+                "won"
+            } else if n < 0 {
+                "lost"
+            } else {
+                "draw"
+            };
+
+            println!("locally predicted {}", state(delta));
+            println!("server said {}", state(my_delta));
+        };
         if opp_cards.is_some() {
             // We can see our opponents cards, so we got to showdown
             let opp_cards = opp_cards.unwrap().0;
@@ -91,24 +107,82 @@ impl PokerBot for TourneyBot {
 
             let my_hand = showdown_engine.process_hand(&p_cards);
             let opp_hand = showdown_engine.process_hand(&o_cards);
+            let (winner, loser) = if my_delta > 0 {
+                (my_hand.clone(), opp_hand.clone())
+            } else if my_delta < 0 {
+                (opp_hand.clone(), my_hand.clone())
+            } else {
+                (my_hand.clone(), opp_hand.clone())
+            };
             match (my_hand.showdown(), opp_hand.showdown()) {
-                (Some(my_hand), Some(opp_hand)) => {
+                (Some(my_showdown_hand), Some(opp_showdown_hand)) => {
                     // We detected something other than high card for both hands
-                },
-                (None, Some(_)) | (Some(_), None) => {
+                    let delta = match showdown_engine.compare_potential_hands(&my_hand, &opp_hand) {
+                        Ordering::Greater => 1,
+                        Ordering::Less => -1,
+                        Ordering::Equal => 0
+                    };
 
+                    print_prediction(&my_hand, &opp_hand, delta);
+
+                    let (actual_winner, actual_loser) = if delta.signum() * my_delta.signum() > 0 {
+                        // We were correct
+                        match delta {
+                            -1 => (opp_showdown_hand, my_showdown_hand),
+                            _ => (my_showdown_hand, opp_showdown_hand)
+                        }
+                    } else {
+                        // We were incorrect or drew
+                        match delta {
+                            -1 => (my_showdown_hand, opp_showdown_hand),
+                            _ => (opp_showdown_hand, my_showdown_hand)
+                        }
+                    };
+
+                    println!("Winner hand: {} Loser hand: {}", actual_winner, actual_loser);
+
+                    if delta != 0 && my_delta != 0 {
+                        match (actual_winner, actual_loser) {
+                            // Same hand type relations
+                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.25, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.4, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (_, _) => {}
+                        }
+                    }
+                },
+                (None, Some(_)) => {
+                    print_prediction(&my_hand, &opp_hand, -1);
+
+                    if my_delta > 0 {
+                        // We are wrong
+                    } else {
+                        // We are right
+                    }
+                },
+                (Some(_), None) => {
+                    print_prediction(&my_hand, &opp_hand, 1);
+
+                    if my_delta < 0 {
+                        // We are wrong
+                    } else {
+                        // We are right
+                    }
                 },
                 (None, None) => {
                     // We only detected high cards. This relationship is very unlikely. Rating 1 / 12
-                    let (my_card, opp_card) = (my_hand.cards()[0], opp_hand.cards()[0]);
-                    let (winner, loser) = if my_delta > 0 {
-                        (my_card, opp_card)
-                    } else {
-                        (opp_card, my_card)
-                    }
+                    let (winner, loser) = (winner.cards().iter().copied().nth(0).unwrap(), loser.cards().iter().copied().nth(0).unwrap());
+
+                    let delta = match showdown_engine.compare_potential_hands(&my_hand, &opp_hand) {
+                        Ordering::Greater => 1,
+                        Ordering::Less => -1,
+                        Ordering::Equal => 0
+                    };
+
+                    print_prediction(&my_hand, &opp_hand, delta);
 
                     if my_delta != 0 {
-                        println!("Attempting to preserve relationship {} -> {} with P(1 / 12)")
+                        // self.add_relationship(1.0 / 12.0, loser.value(), winner.value());
                     }
                 }
             }
@@ -118,116 +192,82 @@ impl PokerBot for TourneyBot {
     fn get_action(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) -> Action {
         // todo!()
         let legal_actions = rs.legal_actions();
-        let checkfold = || if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
-            Action::Check
-        } else {
-            Action::Fold
-        };
 
-        let checkcall = || if (legal_actions & ActionType::CHECK).bits() != 0 {
-            Action::Check
-        } else {
-            Action::Call
-        };
+        let street = rs.street;
+        let ref board_cards = rs.deck.0[..street as usize];
+        let ref my_cards = rs.hands[player_index].unwrap().0;
+        let my_pip = rs.pips[player_index];
+        let opp_pip = rs.pips[1 - player_index];
+        let my_stack = rs.stacks[player_index];
+        let opp_stack = rs.stacks[1 - player_index];
+        let continue_cost = opp_pip - my_pip;
+        let my_contrib = STARTING_STACK - my_stack;
+        let opp_contrib = STARTING_STACK - opp_stack;
+        let pot_total = my_contrib + opp_contrib;
+        let mut rng = rand::thread_rng();
 
-        let raise_amount = |amount: f64| {
-            let amount = amount as i64;
-            let [rb_min, rb_max] = rs.raise_bounds();
-            if amount < rb_min { rb_min }
-            else if amount > rb_max { rb_max }
-            else { amount }
-        };
-
-
-
-        if opp_pip > 10 {
-            match best_hand {
-                ShowdownHand::Flush(cards) | ShowdownHand::FourOfAKind(cards) | ShowdownHand::FullHouse(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(rng.gen_range(0.5,1.5) * pot_total as f64))
-                } else {
-                    checkcall()
+        println!("Pot {} my stack {} opp stack {} CC {}", pot_total, my_stack, opp_stack, continue_cost);
+        println!("My cards [{}]", my_cards.iter().format(", "));
+        println!("Board cards [{}]", board_cards.iter().format(", "));
+        let showdown_engine = ShowdownEngine::new(self.ordering);
+        let my_best = showdown_engine.process_hand(&vec![my_cards.iter().as_slice(), board_cards].into_iter().flat_map(|x: &[Card]| x.iter().copied()).collect::<Vec<Card>>());
+        let raise: f64 = if let Some(board_cards) = Some(board_cards).filter(|x| !x.is_empty()) {
+            // Flop, Turn, or River (we have some board information)
+            let board_best = showdown_engine.process_hand(board_cards);
+            println!("({}) board best {} my best {}", if street == 3 { "flop" } else if street == 4 { "turn" } else { "river" }, board_best, my_best);
+            let hand_relationship = showdown_engine.compare_potential_hands(&my_best, &board_best);
+            match hand_relationship {
+                Ordering::Greater => {
+                    // Our hand beats the board
+                    rng.gen_range(0.5, 2.0) * pot_total as f64
                 },
-                _ => checkfold()
+                Ordering::Equal => {
+                    // Our best *is* the board
+                    0.0
+                },
+                Ordering::Less => {
+                    // The board beats our hand
+                    0.0
+                }
             }
         } else {
-            // Always fold if all we detect is a "low" high card
-            match best_hand {
-                // Our ace in the hole: predicting straights
-                ShowdownHand::Straight(cards) if gs.round_num > 500 => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
+            // Pre-Flop (we have no board information)
+            println!("(pre-flop) my best {}", my_best);
+            match my_best {
+                PotentialHand::Hand(hand) => { // We already have a hand (which means we have pocket pairs)
+                    rng.gen_range(0.7, 1.5) * pot_total as f64
+                },
+                _ => 0.0
+            }
+        };
+
+        println!("Raise worth: {}", raise);
+
+        if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
+            // Raise by the amount we calculated
+            let [rb_min, rb_max] = rs.raise_bounds();
+            let raise = if (raise as i64) > rb_max {
+                rb_max
+            } else if (raise as i64) < rb_min {
+                rb_min
+            } else {
+                raise as i64
+            };
+            Action::Raise(raise)
+        } else {
+            // we can only check call or fold
+            // Here opponent behavior would be nice to know
+            // But just look at how much we *would* raise if we could
+            // Check if we are able to, otherwise, look at how much we would have to call.
+            if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                Action::Check
+            } else {
+                if continue_cost > raise as i64 {
+                    // We don't think it's worth enough to raise. We should fold
+                    Action::Fold
                 } else {
-                    checkcall()
-                },
-                // Flushes
-                ShowdownHand::Flush(cards) if rs.street == 3 => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(0.25 * pot_total as f64))
-                } else {
-                    checkcall()
-                },
-                ShowdownHand::Flush(cards) if rs.street > 3 => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    if rng.gen_bool(0.8) {
-                        Action::Raise(raise_amount(rng.gen_range(0.75,2.5) * my_stack as f64))
-                    } else {
-                        Action::Raise(raise_amount(0.25 * my_stack as f64))
-                    }
-                } else {
-                    checkcall()
-                },
-                ShowdownHand::FourOfAKind(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
-                } else {
-                    checkcall()
-                },
-                ShowdownHand::FullHouse(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
-                } else {
-                    checkcall()
-                },
-                ShowdownHand::ThreeOfAKind(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
-                } else {
-                    checkcall()
-                },
-                ShowdownHand::TwoPair(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(0.5 * pot_total as f64)) // Don't bet too much on it being a straight
-                } else {
-                    checkcall()
-                },
-                // Shadow pair
-                ShowdownHand::Pair(cards) if rs.street == 0 => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    let value = cards[0].value();
-                    let strength = self.ordering.iter().position(|x| x == &value).unwrap();
-                    if (gs.round_num > 200) {
-                        Action::Raise(raise_amount(0.3 * pot_total as f64))
-                    } else if rng.gen_bool(strength as f64 / 13.0 + 0.05) {
-                        Action::Raise(raise_amount(rng.gen_range(0.8,1.4) * pot_total as f64))
-                    } else {
-                        let amount = rng.gen_range(0.15,0.35) * (strength as f64 / 13.0) * pot_total as f64;
-                        let [_, mx] = rs.raise_bounds();
-                        if amount < mx as f64 && rand::random() {
-                            Action::Raise(raise_amount(amount))
-                        } else {
-                            checkcall() // It isn't a very strong hand
-                        }
-                    }
-                } else {
-                    checkcall()
-                },
-                ShowdownHand::Pair(cards) => if (legal_actions & ActionType::RAISE).bits() != 0 {
-                    Action::Raise(raise_amount(rng.gen_range(0.4,1.0) * pot_total as f64)) // Don't bet too much on it being a straight
-                } else {
-                    checkcall()
-                },
-                ShowdownHand::HighCard(card) if gs.round_num > 200 => {
-                    // we have a pretty good idea of what's high and low, so fold if it's low
-                    if self.ordering.iter().position(|x| x == &card.value()).map(|x| x < 10).unwrap_or(false) {
-                        Action::Fold
-                    } else {
-                        checkcall()
-                    }
-                },
-                ShowdownHand::HighCard(card) => checkcall(),
-                _ => checkfold() // Try to exit the game if we dont handle the hand
+                    Action::Call
+                }
             }
         }
     }

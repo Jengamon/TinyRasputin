@@ -27,11 +27,7 @@ macro_rules! into_ordering {
             };
             a
         });
-        assert!(order.len() == 13);
-        order.into_iter().enumerate().try_fold([CardValue::Two; 13], |mut ordering, (i, val)| match val {
-            Ok(val) => { ordering[i] = val; Ok(ordering) },
-            Err(e) => Err(e)
-        }).unwrap()
+        into_ordering!(vec order)
     }};
     (chars $t:expr) => {{
         let order: Vec<_> = $t.chars().map(|x| x.to_string().parse::<CardValue>()).fold(vec![], |mut a, c| {
@@ -49,12 +45,16 @@ macro_rules! into_ordering {
             };
             a
         });
+        into_ordering!(vec order)
+    }};
+    (vec $t:expr) => {{
+        let order = $t;
         assert!(order.len() == 13);
         order.into_iter().enumerate().try_fold([CardValue::Two; 13], |mut ordering, (i, val)| match val {
             Ok(val) => { ordering[i] = val; Ok(ordering) },
             Err(e) => Err(e)
         }).unwrap()
-    }} 
+    }};
 }
 
 /// Valid hands that will win a game
@@ -90,14 +90,14 @@ impl Hand {
 impl fmt::Display for Hand {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Hand::RoyalFlush(a) => write!(fmt, "[Royal Flush {}]", a.iter().format(" ")),
-            Hand::StraightFlush(a) => write!(fmt, "[Straight Flush {}]", a.iter().format(" ")),
-            Hand::FourOfAKind(a) => write!(fmt, "[Four of a Kind {}]", a.iter().format(" ")),
-            Hand::FullHouse(a) => write!(fmt, "[Full House {}]", a.iter().format(" ")),
+            Hand::RoyalFlush(a) => write!(fmt, "[RoyalFlush {}]", a.iter().format(" ")),
+            Hand::StraightFlush(a) => write!(fmt, "[StraightFlush {}]", a.iter().format(" ")),
+            Hand::FourOfAKind(a) => write!(fmt, "[FourKind {}]", a.iter().format(" ")),
+            Hand::FullHouse(a) => write!(fmt, "[FullHouse {}]", a.iter().format(" ")),
             Hand::Flush(a) => write!(fmt, "[Flush {}]", a.iter().format(" ")),
             Hand::Straight(a) => write!(fmt, "[Straight {}]", a.iter().format(" ")),
-            Hand::ThreeOfAKind(a) => write!(fmt, "[Three of a Kind {}]", a.iter().format(" ")),
-            Hand::TwoPair(a) => write!(fmt, "[Two Pair {}]", a.iter().format(" ")),
+            Hand::ThreeOfAKind(a) => write!(fmt, "[ThreeKind {}]", a.iter().format(" ")),
+            Hand::TwoPair(a) => write!(fmt, "[TwoPair {}]", a.iter().format(" ")),
             Hand::Pair(a) => write!(fmt, "[Pair {}]", a.iter().format(" "))
         }
     }
@@ -126,11 +126,11 @@ impl fmt::Display for PotentialHand {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
             PotentialHand::Hand(a) => write!(fmt, "[Winning Hand {}]", a),
-            PotentialHand::StraightDraw(a, typ) => write!(fmt, "[Straight Draw {} ({:?})]", a.iter().format(" "), typ),
-            PotentialHand::StraightFlushDraw(a, typ) => write!(fmt, "[Straight Flush Draw {} ({:?})]", a.iter().format(" "), typ),
-            PotentialHand::RoyalFlushDraw(a, typ) => write!(fmt, "[Royal Flush Draw {} ({:?})]", a.iter().format(" "), typ),
-            PotentialHand::FlushDraw(a) => write!(fmt, "[Flush Draw {}]", a.iter().format(" ")),
-            PotentialHand::HighCard(a) => write!(fmt, "[High Card {}]", a),
+            PotentialHand::StraightDraw(a, typ) => write!(fmt, "[StraightDraw {} ({:?})]", a.iter().format(" "), typ),
+            PotentialHand::StraightFlushDraw(a, typ) => write!(fmt, "[StraightFlushDraw {} ({:?})]", a.iter().format(" "), typ),
+            PotentialHand::RoyalFlushDraw(a, typ) => write!(fmt, "[RoyalFlushDraw {} ({:?})]", a.iter().format(" "), typ),
+            PotentialHand::FlushDraw(a) => write!(fmt, "[FlushDraw {}]", a.iter().format(" ")),
+            PotentialHand::HighCard(a) => write!(fmt, "[HighCard {}]", a),
         }
     }
 }
@@ -215,7 +215,34 @@ macro_rules! detect_hands {
             .chain(detected_pairs.iter().cloned())
             .collect();
         (detected_hands, detected_pairs, detected_three_of_a_kind, detected_four_of_a_kind, detected_straights, detected_flushes, detected_straight_flushes)
-    }}
+    }};
+    (no straights $slf:expr, $hand:expr) => {{
+        let detected_flushes = $slf.detect_flushes($hand);
+
+        let detected_four_of_a_kind = $slf.detect_of_a_kind($hand, 4);
+        let detected_three_of_a_kind = $slf.detect_of_a_kind($hand, 3);
+        let detected_pairs = $slf.detect_of_a_kind($hand, 2);
+
+        // Arrange all possible combinations of detected hands
+        let detected_hands: Vec<HashSet<Card>> = detected_flushes.iter().cloned()
+            .chain(detected_four_of_a_kind.iter().cloned())
+            // Full Houses and 3K
+            .chain(detected_three_of_a_kind.iter().flat_map(|toak| {
+                detected_pairs.clone().into_iter().map(move |pair| toak.clone().into_iter().chain(pair.clone().into_iter()).collect::<HashSet<_>>())
+            }))
+            .chain(detected_three_of_a_kind.iter().cloned())
+            // Two pair and pairs
+            .chain(detected_pairs.iter().flat_map(|pair| {
+                detected_pairs.clone().into_iter().filter_map(move |opair| if &opair != pair {
+                    Some(opair.into_iter().chain(pair.clone().into_iter()).collect::<HashSet<_>>())
+                } else {
+                    None
+                })
+            }))
+            .chain(detected_pairs.iter().cloned())
+            .collect();
+        (detected_hands, detected_pairs, detected_three_of_a_kind, detected_four_of_a_kind, vec![], detected_flushes, vec![])
+    }};
 }
 
 macro_rules! process_hands {
@@ -243,9 +270,14 @@ impl ShowdownEngine {
         })
     }
 
-    pub fn all_possible_hands(&self, hand: &[Card]) -> Vec<PotentialHand> {
+    // Only for consistency checking
+    pub fn all_possible_hands(&self, hand: &[Card], straights: bool) -> Vec<PotentialHand> {
         // Brutely detect all hands, so every 4K will have 3 pairs, every 3K will have 2 pair and so on
-        let (hands, pairs, three_of_a_kind, four_of_a_kind, straights, flushes, straight_flushes) = detect_hands!(self, hand);
+        let (hands, pairs, three_of_a_kind, four_of_a_kind, straights, flushes, straight_flushes) = if straights {
+            detect_hands!(self, hand)
+        } else {
+            detect_hands!(no straights self, hand)
+        };
         hands.into_iter().flat_map(|hand| {
             // Four of a Kinds
             four_of_a_kind.iter().filter_map(|x| if x.is_subset(&hand.iter().copied().collect()) {
@@ -322,8 +354,12 @@ impl ShowdownEngine {
     // We don't detect high cards, because those are technically not a "potential" hand, but rather when we have no other hands
     // and we might want to react differently if we have potential straights or flushes
     // Tries to detect the best possible hand for a given set of cards
-    pub fn potential_hands(&self, hand: &[Card]) -> Vec<PotentialHand> {
-        let (hands, pairs, three_of_a_kind, four_of_a_kind, straights, flushes, straight_flushes) = detect_hands!(self, hand);
+    pub fn potential_hands(&self, hand: &[Card], straights: bool) -> Vec<PotentialHand> {
+        let (hands, pairs, three_of_a_kind, four_of_a_kind, straights, flushes, straight_flushes) = if straights {
+            detect_hands!(self, hand)
+        } else {
+            detect_hands!(no straights self, hand)
+        };
 
         macro_rules! best_hand {
             ($hands_iter:expr) => {
@@ -440,9 +476,29 @@ impl ShowdownEngine {
     }
 
     // Don't use this in practice. Only used for consistency checking of the engine
+    pub fn process_hand_no_straight_all(&self, hand: &[Card]) -> PotentialHand {
+        let hand = ShowdownEngine::make_hand_unique(hand.iter());
+        let hands = self.all_possible_hands(&hand, false);
+        match process_hands!(self, hands) {
+            Some(hand) => hand,
+            None => PotentialHand::HighCard(self.highest_card(hand))
+        }
+    }
+
+    pub fn process_hand_no_straight(&self, hand: &[Card]) -> PotentialHand {
+        let hand = ShowdownEngine::make_hand_unique(hand.iter());
+        let hands = self.potential_hands(&hand, false);
+        // match hands.max_by(|a, b| process_hands!())
+        match process_hands!(self, hands) {
+            Some(hand) => hand,
+            None => PotentialHand::HighCard(self.highest_card(hand))
+        }
+    }
+
+    // Don't use this in practice. Only used for consistency checking of the engine
     pub fn process_hand_all(&self, hand: &[Card]) -> PotentialHand {
         let hand = ShowdownEngine::make_hand_unique(hand.iter());
-        let hands = self.all_possible_hands(&hand);
+        let hands = self.all_possible_hands(&hand, true);
         match process_hands!(self, hands) {
             Some(hand) => hand,
             None => PotentialHand::HighCard(self.highest_card(hand))
@@ -451,7 +507,7 @@ impl ShowdownEngine {
 
     pub fn process_hand(&self, hand: &[Card]) -> PotentialHand {
         let hand = ShowdownEngine::make_hand_unique(hand.iter());
-        let hands = self.potential_hands(&hand);
+        let hands = self.potential_hands(&hand, true);
         // match hands.max_by(|a, b| process_hands!())
         match process_hands!(self, hands) {
             Some(hand) => hand,
