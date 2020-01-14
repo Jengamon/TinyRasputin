@@ -144,9 +144,9 @@ impl PokerBot for TourneyBot {
                     if delta != 0 && my_delta != 0 {
                         match (actual_winner, actual_loser) {
                             // Same hand type relations
-                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (_, _) => {}
                         }
                     }
@@ -171,7 +171,12 @@ impl PokerBot for TourneyBot {
                 },
                 (None, None) => {
                     // We only detected high cards. This relationship is very unlikely. Rating 1 / 12
-                    let (winner, loser) = (winner.cards().iter().copied().nth(0).unwrap(), loser.cards().iter().copied().nth(0).unwrap());
+                    // let (winner, loser) = (winner.cards().iter().copied().nth(0).unwrap(), loser.cards().iter().copied().nth(0).unwrap());
+                    let (winner_hand, loser_hand) = if my_delta > 0 {
+                        (my_cards, opp_cards)
+                    } else {
+                        (opp_cards, my_cards)
+                    };
 
                     let delta = match showdown_engine.compare_potential_hands(&my_hand, &opp_hand) {
                         Ordering::Greater => 1,
@@ -182,8 +187,16 @@ impl PokerBot for TourneyBot {
                     print_prediction(&my_hand, &opp_hand, delta);
 
                     if my_delta != 0 {
-                        // self.add_relationship(1.0 / 12.0, loser.value(), winner.value());
-                        self.add_relationship("hc -> hc", 0.9, loser.value(), winner.value())
+                        for winning_card in winner_hand.into_iter() {
+                            for losing_card in loser_hand.into_iter() {
+                                self.add_relationship("hc -> hc", 0.25, losing_card.value(), winning_card.value());
+                            }
+                        }
+                    } else {// In case of a draw, the high card is a board card, but this is very unlikely
+                        let high_card = showdown_engine.highest_card(board_cards);
+                        for card in winner_hand.into_iter().chain(loser_hand.into_iter()) {
+                            self.add_relationship("(draw) hc -> hc", 0.1, card.value(), high_card.value())
+                        }
                     }
                 }
             }
