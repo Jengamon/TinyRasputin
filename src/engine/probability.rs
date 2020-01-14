@@ -114,8 +114,7 @@ impl ProbabilityEngine {
                     (a, b, p)
                 };
 
-                let confidence = (p - 0.5).abs() / 2.0;
-                if relative_eq!(confidence, 0.0, epsilon = EPSILON) {
+                if relative_eq!(p, 0.0, epsilon = EPSILON) {
                     println!("Using relationship {} -> {} with no confidence", a, b);
                 } else {
                     println!("Using relationship {} -> {} with confidence {}", a, b, confidence);

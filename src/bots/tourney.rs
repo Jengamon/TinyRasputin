@@ -20,6 +20,7 @@ use std::cell::{RefCell, Cell};
 use std::borrow::Borrow;
 
 const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
+const MAX_MULTIPLIER: f64 = 10.0;
 
 pub struct TourneyBot {
     ordering: [CardValue; 13],
@@ -237,7 +238,19 @@ impl PokerBot for TourneyBot {
                 PotentialHand::Hand(hand) => { // We already have a hand (which means we have pocket pairs)
                     rng.gen_range(0.7, 1.5) * pot_total as f64
                 },
-                _ => 0.0
+                hand => {
+                    // Generate a percent from what we think 
+                    let possibilities = self.relations().possibilities() as f64 / ;
+                    let card_score = my_cards.into_iter().map(|x| self.ordering.iter().position(|y| y == &x)).sum();
+                    let strength = card_score as f64 / 24.0;
+                    let balance = possibilities / 6_227_020_800;
+                    if strength > 12.0 {
+                        if rng.gen_bool(1.0 - 0.5 / balance) {
+                            println!("Betting randomly on {}" hand);
+                            rng.gen_range(card_score, (6_227_020_800.0 / possibilities as f64).min(MAX_MULTIPLIER) * card_score) * pot_total as f64
+                        }
+                    }
+                }
             }
         };
 
