@@ -144,9 +144,9 @@ impl PokerBot for TourneyBot {
                     if delta != 0 && my_delta != 0 {
                         match (actual_winner, actual_loser) {
                             // Same hand type relations
-                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.25, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.4, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.5, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (_, _) => {}
                         }
                     }
@@ -183,6 +183,7 @@ impl PokerBot for TourneyBot {
 
                     if my_delta != 0 {
                         // self.add_relationship(1.0 / 12.0, loser.value(), winner.value());
+                        self.add_relationship("hc -> hc", 0.9, loser.value(), winner.value())
                     }
                 }
             }
