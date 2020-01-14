@@ -35,7 +35,7 @@ impl Guess {
     }
     pub fn new () -> Guess {
         Guess {
-            guess: [7; 13]
+            guess: [7.0; 13]
         }
     }
 }

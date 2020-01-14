@@ -272,8 +272,14 @@ impl ShowdownEngine {
         })
     }
 
-    pub fn counts<'a, H, C: Borrow<Card>>(hand: H) -> Vec<(usize, CardValue)> where H: 'a + Iterator<Item = C> {
-        todo!()
+    // What are the card values that appear in this hand?s
+    pub fn values<'a, H, C: Borrow<Card>>(hand: H) -> Vec<CardValue> where H: 'a + Iterator<Item = C> {
+        hand.map(|c| c.borrow().value()).fold(vec![], |mut acc, val| { if !acc.contains(&val) { acc.push(val)}; acc })
+    }
+
+    // Count the number of times a value appears in a hand
+    pub fn count<'a, H, C: Borrow<Card>>(hand: H, value: &CardValue) -> usize where H: 'a + Iterator<Item = C> {
+        hand.map(|c| c.borrow().value()).fold(0, |acc, v| if &v == value { acc + 1 } else { acc })
     }
 
     // Only for consistency checking

@@ -54,8 +54,7 @@ impl TourneyBot {
         self.running_guess.update(a, b, strength as f32);
         if self.prob_engine.update(log_string.borrow(), &a, &b, strength) {
             println!("[{}] Saw relationship {} -> {} with strength {}...", log_string.borrow(), a, b, strength);
-            //self.relations_dirty.set(true);
-            self.running_guess.update(a,b);
+            self.relations_dirty.set(true);
         }
     }
 
@@ -72,11 +71,11 @@ impl TourneyBot {
 impl PokerBot for TourneyBot {
     fn handle_new_round(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) {
         println!("Round #{} time {} ({})", gs.round_num, gs.game_clock, gs.bankroll);
-        let relations = self.relations();
-        let sample_space_size = relations.possibilities();
+        // let relations = self.relations();
+        // let sample_space_size = relations.possibilities();
         // println!("Sample space size -> {}", sample_space_size.to_formatted_string(&Locale::en));
         // In the unlikely event we actually calculate a "for certain" ordering, just keep it until we violate it enough
-        if sample_space_size > SAMPLE_GUESS_THRESHOLD {
+        if true { // sample_space_size > SAMPLE_GUESS_THRESHOLD {
             // let new_order = generate_ordering(&relations);
             let new_order = generate_ordering(&vec![]);
             // TODO Add relations that we are sure of
@@ -161,7 +160,32 @@ impl PokerBot for TourneyBot {
                             (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (Hand::FullHouse(winner), Hand::FullHouse(loser)) => {
-                                add_relationship("fh -> fh", 0.9, )
+                                let (winner_triple_value, winner_pair_value) = {
+                                    let values = ShowdownEngine::values(winner.iter());
+                                    assert!(values.len() == 2);
+                                    let counts: Vec<_> = values.iter().map(|x| ShowdownEngine::count(winner.iter().copied(), x)).collect();
+                                    // There are only 5 cards max, so one must be higher
+                                    if counts[0] > counts[1] {
+                                        (values[0], values[1])
+                                    } else {
+                                        (values[1], values[0])
+                                    }
+                                };
+                                let (loser_triple_value, loser_pair_value) = {
+                                    let values = ShowdownEngine::values(loser.iter());
+                                    assert!(values.len() == 2);
+                                    let counts: Vec<_> = values.iter().map(|x| ShowdownEngine::count(winner.iter().copied(), x)).collect();
+                                    if counts[0] > counts[1] {
+                                        (values[0], values[1])
+                                    } else {
+                                        (values[1], values[0])
+                                    }
+                                };
+                                if winner_triple_value != loser_triple_value {
+                                    self.add_relationship("fh -> fh (ltv -> wtv)", 0.9, loser_triple_value, winner_triple_value);
+                                } else {
+                                    self.add_relationship("fh -> fh (lpv -> wpv)", 0.9, loser_pair_value, winner_pair_value);
+                                }
                             },
                             (_, _) => {}
                         }
