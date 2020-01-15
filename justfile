@@ -32,17 +32,18 @@ clean: _clean-package _clean-vendor
 update-vendor: _clean-vendor
     cargo vendor
 
-@_package: _clean-package
+# Build the packge that we will upload to the server
+@package: _clean-package
     echo 'Packing tinyrasputin.zip for release...'
     for target in {{package_targets}}; do \
         7z a -bb0 -bd tinyrasputin.zip $target > nul; \
     done
 
-_create-test-directory: _package
+_create-test-directory:
     rm -rf ../server_tinyrasputin
     7z x -bb0 -y -o../server_tinyrasputin -- tinyrasputin.zip > nul
 
-# Simulate what the package would do on the server
+# Build the package while testing what it would do on the server
 test-package: _create-test-directory
     cd .. && {{python}} engine.py
 
