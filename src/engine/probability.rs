@@ -10,6 +10,7 @@ use approx::{relative_eq, relative_ne};
 use std::collections::HashSet;
 use std::convert::AsRef;
 use std::cmp::Ordering;
+use crate::debug_println;
 
 const CONFIRMATION_THRESHOLD: f64 = 0.5;
 const EPSILON: f64 = std::f64::EPSILON;
@@ -32,7 +33,7 @@ impl ProbabilityEngine {
     // Also, the more relations we see, the weaker the certainty becomes
     pub fn update<B: AsRef<str>>(&mut self, name: B, a: &CardValue, b: &CardValue, certainty: f64) -> bool {
         assert!(name.as_ref() != "", "Cannot name a rule an empty string");
-        println!("[ProbEngine {}] Called with {} -> {} (certainty {})", name.as_ref(), a, b, certainty);
+        debug_println!("[ProbEngine {}] Called with {} -> {} (certainty {})", name.as_ref(), a, b, certainty);
         self._update(name, a, b, certainty)
     }
 
@@ -51,7 +52,7 @@ impl ProbabilityEngine {
             //     let (mut pre, _, _) = relationships(&relations, &a2);
             //     let (_, mut post, _) = relationships(&relations, &b2);
             //     post.any(|x| x == *b) && pre.any(|x| x == *a) && !(a == a2 && b == b2)
-            // }).inspect(|(a, b)| println!("Transitively updating {} -> {} with probability {}", a, b, certainty));
+            // }).inspect(|(a, b)| debug_println!("Transitively updating {} -> {} with probability {}", a, b, certainty));
 
             // for (a, b) in transitive {
             //     self._update(a, b, certainty);
@@ -126,18 +127,18 @@ impl ProbabilityEngine {
                 };
 
                 if relative_eq!(p, 0.0, epsilon = EPSILON) {
-                    // println!("Using relationship {} -> {} with no confidence", a, b);
+                    // debug_println!("Using relationship {} -> {} with no confidence", a, b);
                 } else {
-                    // println!("Using relationship {} -> {} with confidence {}", a, b, p);
+                    // debug_println!("Using relationship {} -> {} with confidence {}", a, b, p);
                 }
                 ((a, b), p)
             } else {
                 // We have no information on their relative ordering, so flip a coin
                 if rand::random() {
-                    // println!("Using relationship {} -> {} with no confidence", a, b);
+                    // debug_println!("Using relationship {} -> {} with no confidence", a, b);
                     ((a, b), 0.0)
                 } else {
-                    // println!("Using relationship {} -> {} with no confidence", b, a);
+                    // debug_println!("Using relationship {} -> {} with no confidence", b, a);
                     ((b, a), 0.0)
                 }
             }
@@ -166,11 +167,11 @@ impl ProbabilityEngine {
                         .max_by(|a, b| a.partial_cmp(b).unwrap());
                     if let Some(mx) = mx {
                         if mx > CONFIRMATION_THRESHOLD {
-                            println!("[Transitive] Using relationship {} -> {} with confidence {}", a, b, mx + EPSILON);
+                            // debug_println!("[Transitive] Using relationship {} -> {} with confidence {}", a, b, mx + EPSILON);
                             proposal.push(((a, b), mx + EPSILON));
                         } else {
                             if mx != 0.0 { // We don't generate relations that we aren't confident in at all
-                                println!("Could generate relation {} -> {}, but fails confidence check...({})", a, b, mx);
+                                debug_println!("Could generate relation {} -> {}, but fails confidence check...({})", a, b, mx);
                             }
                             proposal.push(guess(a, b, p));
                         }
@@ -212,8 +213,8 @@ impl ProbabilityEngine {
                         count
                     }) + post_a_total;
 
-                    // println!("State: P(-> {1}) = {2} / {3} P({0} ->) = {4} / {5} P({0} -> | -> {1}) = {6}", a, b, pre_b_count, pre_b_total, post_a_count, post_a_total, p_post_a_pre_b);
-                    // println!("Relations pre {0}&{1} [{2}] pre{0}|{1} [{3}] post {0}|{1} [{4}] post {0}&{1} [{5}]", a, b,
+                    // debug_println!("State: P(-> {1}) = {2} / {3} P({0} ->) = {4} / {5} P({0} -> | -> {1}) = {6}", a, b, pre_b_count, pre_b_total, post_a_count, post_a_total, p_post_a_pre_b);
+                    // debug_println!("Relations pre {0}&{1} [{2}] pre{0}|{1} [{3}] post {0}|{1} [{4}] post {0}&{1} [{5}]", a, b,
                         // pre_ab.clone().format(""), pre_a_or_b.clone().format(""), post_a_or_b.clone().format(""), post_ab.clone().format(""));
                     let p = if pre_b_total == 0 {
                         // B is an orphan or initial (we have no information on what is in front of B)
@@ -242,7 +243,7 @@ impl ProbabilityEngine {
                         unreachable!("LOGIC ERROR")
                     };
 
-                    // println!("P(-> {1} | {0} ->) = {2}", a, b, p);
+                    // debug_println!("P(-> {1} | {0} ->) = {2}", a, b, p);
 
                     let (p, a, b) = if p < 0.0 {
                         (-p, b, a)
@@ -262,21 +263,21 @@ impl ProbabilityEngine {
         let mut run_count = 0;
         while detect_cycles(&final_.iter().map(|v| v.0).collect::<Vec<_>>()).len() > 0 {
             let cycles = detect_cycles(&final_.iter().map(|v| v.0).collect::<Vec<_>>());
-            println!("===========RUN COUNT {}===========", run_count);
+            debug_println!("===========RUN COUNT {}===========", run_count);
             for cycle in &cycles {
-                println!("Detected cycle {}", cycle.iter().format(" -> "));
+                debug_println!("Detected cycle {}", cycle.iter().format(" -> "));
             }
             run_count += 1;
-            println!("=================================");
+            debug_println!("=================================");
             let cyclical = cycles.into_iter().flat_map(|cycle| cycle.windows(2).map(|pair| (pair[0], pair[1])).collect::<Vec<_>>()).collect::<Vec<_>>();
             let highest_cyclical_confidence = cyclical.iter().flat_map(|rel| final_.iter().find(|(frel, _)| frel == rel).map(|(_, conf)| conf)).max_by(|a, b| a.partial_cmp(b).unwrap());
             let lowest_confidence = final_.iter().map(|(_, conf)| conf).min_by(|a, b| a.partial_cmp(&b).unwrap());
             if let (Some(highest_cyclical_confidence), Some(lowest_confidence)) = (highest_cyclical_confidence, lowest_confidence) {
                 let (problematic, okay): (Vec<_>, Vec<_>) = final_.iter()
                     .partition(|((a, b), confidence)| (cyclical.contains(&(*a, *b)) || cyclical.contains(&(*b, *a))) && relative_eq!(confidence, highest_cyclical_confidence, epsilon = EPSILON));
-                println!("Okay rules {}", okay.iter().map(|((a, b), p)| format!("{0} -({1:.2})> {2}",a,p, b)).format(", "));
-                println!("Problematic rules {}", problematic.iter().map(|((a, b), p)| format!("{0} -({1:.2})> {2}",a,p, b)).format(", "));
-                println!("Highest cyclical rule {0:.2} Lowest rule {1:.2}", highest_cyclical_confidence, lowest_confidence);
+                debug_println!("Okay rules {}", okay.iter().map(|((a, b), p)| format!("{0} -({1:.2})> {2}",a,p, b)).format(", "));
+                debug_println!("Problematic rules {}", problematic.iter().map(|((a, b), p)| format!("{0} -({1:.2})> {2}",a,p, b)).format(", "));
+                debug_println!("Highest cyclical rule {0:.2} Lowest rule {1:.2}", highest_cyclical_confidence, lowest_confidence);
                 for ((a, b), p) in problematic {
                     let prob = self.probabilities().into_iter().find(|(rel, _)| if a < b { rel == &(a, b) } else { rel == &(b, a) }).map(|x| if a < b { x.1 } else { -x.1 });
                     let confidence = p * (1.0 - lowest_confidence / highest_cyclical_confidence);
@@ -285,7 +286,7 @@ impl ProbabilityEngine {
                         // An invariant should be that confidence <= prob, if it isn't. We should panic~
                         if relative_ne!(confidence / prob.abs(), 1.0, epsilon = 0.1) {
                             // We are generating inconsistent information, and we were so sure. Wipe the relation
-                            println!("Problematic cyclical relation {0} -> {1} formed with confidence {2:.2} and actual prob {3:.2} (calculated prob {4:.2}). Rule conflict. Wiping rule...", a, b, prob, confidence, p);
+                            debug_println!("Problematic cyclical relation {0} -> {1} formed with confidence {2:.2} and actual prob {3:.2} (calculated prob {4:.2}). Rule conflict. Wiping rule...", a, b, prob, confidence, p);
                             let key = if a < b { (a, b) } else { (b, a) };
                             // If we were more confident than the calculated probabilty, a rule is going haywire
                             // We now ignore it
@@ -293,7 +294,7 @@ impl ProbabilityEngine {
                                 // We were more confident than the actual probability
                                 // We will now ignore the strongest rule if it is biased more than a random toss in a -> b direction
                                 let rules = self.get_rules(&a, &b).into_iter().filter(|(name, _)| !name.is_empty()).collect::<Vec<_>>();
-                                println!("Production rules: {}", rules.iter().map(|(name, strength)| format!("[{} P({})]", name, strength)).format(", "));
+                                debug_println!("Production rules: {}", rules.iter().map(|(name, strength)| format!("[{} P({})]", name, strength)).format(", "));
                                 if rules.len() >= 2 {
                                     // Ignore the strongest rule
                                     if let Some((rule, _)) = rules.into_iter().max_by(|(_, a), (_, b)| match a.abs().partial_cmp(&b.abs()) {
@@ -306,7 +307,7 @@ impl ProbabilityEngine {
                                         *inc_rules = intersection;
                                         let post_len = inc_rules.len();
                                         if post_len > pre_len {
-                                            println!("Marking rule {} as inconsistant.", rule);
+                                            debug_println!("Marking rule {} as inconsistant.", rule);
                                         }
                                         
                                     } else {
@@ -314,16 +315,16 @@ impl ProbabilityEngine {
                                     }
                                 } else if rules.len() == 1 {
                                     // The rule simply got it incorrect, not inconsistant with other results
-                                    println!("Problematic pair {} -> {} was randomly generated by rule [{}]", a, b, rules[0].0);
+                                    debug_println!("Problematic pair {} -> {} was randomly generated by rule [{}]", a, b, rules[0].0);
                                 }
                             }
                             self.seen.borrow_mut().remove(&key);
                         } else { // Our confidence is either equal to or less than our probability. Let's not panic yet, just fix if possible.
-                            println!("Problematic cyclical relation {0} -> {1} formed with prob {2:.2}. Weak rule conflict or wrong information generation is possible. Weakening rule...", a, b, prob.abs());
+                            debug_println!("Problematic cyclical relation {0} -> {1} formed with prob {2:.2}. Weak rule conflict or wrong information generation is possible. Weakening rule...", a, b, prob.abs());
                             self._update("", &a, &b, -prob.abs());
                         }
                     } else {
-                        println!("Problematic cyclical relation {0} -> {1} was randomly formed. Just ignore.", a ,b);
+                        debug_println!("Problematic cyclical relation {0} -> {1} was randomly formed. Just ignore.", a ,b);
                     }
                 }
                 final_ = okay;

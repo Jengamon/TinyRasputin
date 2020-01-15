@@ -11,11 +11,17 @@ bitflags = "1.2"
 clap = "2.33"
 rand = "0.7"
 itertools = "0.8"
-num-format = "0.4"
 approx = "0.3"
 
 [dev-dependencies]
 criterion = "0.3"
+num-format = "0.4"
+
+[profile.release]
+codegen-units = 128
+panic = 'abort'
+opt-level = 0 # Compiling in time is more optimal than optimizing
+incremental = true
 
 [[bench]]
 name = "engine_bench"

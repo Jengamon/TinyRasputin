@@ -16,13 +16,14 @@ use tinyrasputin::{
 use std::cmp::Ordering;
 use rand::prelude::*;
 use itertools::Itertools;
-use num_format::{Locale, ToFormattedString};
+// use num_format::{Locale, ToFormattedString};
 use std::cell::{RefCell, Cell};
 use std::borrow::Borrow;
 
-const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
+// const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
 const RAISE_HAPPY: f64 = 0.7;
 const RAISE_CAUTIOUS: f64 = 0.3;
+const FILE_BYTE_SIZE: usize = 524288;
 
 pub struct TourneyBot {
     ordering: [CardValue; 13],
@@ -34,6 +35,9 @@ pub struct TourneyBot {
     // Learn your opponent to learn what you should do
     opponent_raise_count: i64,
     running_guess: Guess,
+
+    // How many bytes have we output?
+    byte_count: usize,
 }
 
 impl Default for TourneyBot {
@@ -45,6 +49,7 @@ impl Default for TourneyBot {
             relations_dirty: Cell::new(false),
             opponent_raise_count: 0,
             running_guess: Guess::new(),
+            byte_count: 0,
         }
     }
 }
@@ -53,7 +58,7 @@ impl TourneyBot {
     fn add_relationship<S>(&mut self, log_string: S, strength: f64, a: CardValue, b: CardValue) where S: Borrow<str> {
         self.running_guess.update(a, b, strength as f32);
         if self.prob_engine.update(log_string.borrow(), &a, &b, strength) {
-            println!("[{}] Saw relationship {} -> {} with strength {}...", log_string.borrow(), a, b, strength);
+            self.debug_print(format!("[{}] Saw relationship {} -> {} with strength {:.2}...", log_string.borrow(), a, b, strength), 0.3);
             self.relations_dirty.set(true);
         }
     }
@@ -66,18 +71,44 @@ impl TourneyBot {
         }
         self.relations.borrow().iter().copied().collect()
     }
+
+    fn debug_print(&mut self, string: String, necessity: f64) {
+        let bytes_reserved = self.internal_state().len();
+        let bytes_to_take = string.len();
+        // let mut rng = rand::thread_rng();
+        let bytes_remaining = FILE_BYTE_SIZE - bytes_reserved - self.byte_count - 1;
+        if bytes_to_take as f64 / bytes_remaining as f64 <= necessity {
+            self.byte_count += bytes_to_take;
+            println!("{}", string);
+        }
+    }
+
+    fn internal_state(&self) -> String {
+        use std::fmt::Write;
+
+        let mut string = String::new();
+        let relations = self.relations();
+        writeln!(string, "{}", relations.debug_relations()).unwrap();
+        writeln!(string, "{:?}", self.running_guess).unwrap();
+        writeln!(string, "{}", self.prob_engine.probabilities().into_iter().map(|((a, b), p)| format!("{} -> {} P({:.4})", a, b, p)).format("\n")).unwrap();
+        let ignored_rules = self.prob_engine.inconsistent_rule_names();
+        for rule in ignored_rules {
+            writeln!(string, "You should check rule [{}] for inconsistencies.", rule).unwrap();
+        }
+        string
+    }
 }
 
 impl PokerBot for TourneyBot {
     fn handle_new_round(&mut self, gs: &GameState, rs: &RoundState, player_index: usize) {
-        println!("Round #{} time {} ({})", gs.round_num, gs.game_clock, gs.bankroll);
+        self.debug_print(format!("Round #{} {:.0}", gs.round_num, gs.game_clock), gs.round_num as f64 / 1000.0);
         // let relations = self.relations();
         // let sample_space_size = relations.possibilities();
         // println!("Sample space size -> {}", sample_space_size.to_formatted_string(&Locale::en));
         // In the unlikely event we actually calculate a "for certain" ordering, just keep it until we violate it enough
         if true { // sample_space_size > SAMPLE_GUESS_THRESHOLD {
             // let new_order = generate_ordering(&relations);
-            let new_order = generate_ordering(&vec![]);
+            let new_order = generate_ordering(&self.relations());
             // TODO Add relations that we are sure of
             self.ordering = new_order;
         }
@@ -92,19 +123,7 @@ impl PokerBot for TourneyBot {
         let ref my_cards = previous_state.hands[player_index];
         let ref opp_cards = previous_state.hands[1 - player_index];
         let ref board_cards = previous_state.deck.0[..street as usize];
-        println!("Cards: {} {} <{}>", my_cards.print(), opp_cards.print(), board_cards.iter().format(", "));
-        let print_prediction = |my_hand, opp_hand, delta| {
-            let state = |n| if n > 0 {
-                "won"
-            } else if n < 0 {
-                "lost"
-            } else {
-                "draw"
-            };
-
-            println!("locally predicted {}", state(delta));
-            println!("server said {}", state(my_delta));
-        };
+        // println!("Cards: {} {} <{}>", my_cards.print(), opp_cards.print(), board_cards.iter().format(", "));
         if opp_cards.is_some() {
             // We can see our opponents cards, so we got to showdown
             let opp_cards = opp_cards.unwrap().0;
@@ -125,6 +144,19 @@ impl PokerBot for TourneyBot {
                 (opp_hand.clone(), my_hand.clone())
             } else {
                 (my_hand.clone(), opp_hand.clone())
+            };
+            let mut print_prediction = |my_hand, opp_hand, delta| {
+                let state = |n: i64| if n > 0 {
+                    "won"
+                } else if n < 0 {
+                    "lost"
+                } else {
+                    "draw"
+                };
+    
+                // println!("locally predicted {}", state(delta));
+                // println!("server said {}", state(my_delta));
+                self.debug_print(format!("expected {} ({})", state(delta), delta.signum() == my_delta.signum()), 0.5);
             };
             match (my_hand.showdown(), opp_hand.showdown()) {
                 (Some(my_showdown_hand), Some(opp_showdown_hand)) => {
@@ -151,7 +183,7 @@ impl PokerBot for TourneyBot {
                         }
                     };
 
-                    println!("Winner hand: {} Loser hand: {}", actual_winner, actual_loser);
+                    self.debug_print(format!("Winner hand: {} Loser hand: {}", actual_winner, actual_loser), 0.5);
 
                     if my_delta != 0 {
                         match (actual_winner, actual_loser) {
@@ -268,15 +300,15 @@ impl PokerBot for TourneyBot {
         // }
 
         // println!("Pot {} my stack {} opp stack {} CC {}", pot_total, my_stack, opp_stack, continue_cost);
-        println!("My cards [{}]", my_cards.iter().format(", "));
-        println!("Board cards [{}]", board_cards.iter().format(", "));
+        // println!("My cards [{}]", my_cards.iter().format(", "));
+        // println!("Board cards [{}]", board_cards.iter().format(", "));
         let showdown_engine = ShowdownEngine::new(self.ordering);
 
         let my_best = showdown_engine.process_hand(&vec![my_cards.iter().as_slice(), board_cards].into_iter().flat_map(|x: &[Card]| x.iter().copied()).collect::<Vec<Card>>());
         let raise: f64 = if let Some(board_cards) = Some(board_cards).filter(|x| !x.is_empty()) {
             // Flop, Turn, or River (we have some board information)
             let board_best = showdown_engine.process_hand(board_cards);
-            println!("({}) board best {} my best {}", if street == 3 { "flop" } else if street == 4 { "turn" } else { "river" }, board_best, my_best);
+            self.debug_print(format!("({}) board best {} my best {}", if street == 3 { "flop" } else if street == 4 { "turn" } else { "river" }, board_best, my_best), 0.5);
             let hand_relationship = showdown_engine.compare_potential_hands(&my_best, &board_best);
             match hand_relationship {
                 Ordering::Greater => {
@@ -294,7 +326,7 @@ impl PokerBot for TourneyBot {
             }
         } else {
             // Pre-Flop (we have no board information)
-            println!("(pre-flop) my best {}", my_best);
+            self.debug_print(format!("(pre-flop) my best {}", my_best), 0.1);
             match my_best {
                 PotentialHand::Hand(hand) => { // We already have a hand (which means we have pocket pairs)
                     rng.gen_range(0.7, 1.5) * pot_total as f64
@@ -320,9 +352,9 @@ impl PokerBot for TourneyBot {
             }
         };
 
-        println!("Raise worth: {}", raise);
+        self.debug_print(format!("Raise worth: {}", raise), 0.5);
 
-        let raise = raise as i64;
+        let raise = raise as u64;
 
         let act = |fail_action| if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
             Action::Check
@@ -333,17 +365,21 @@ impl PokerBot for TourneyBot {
         if raise > continue_cost {
             // Bound the raise
             let [rb_min, rb_max] = rs.raise_bounds();
-            let raise = if (raise as i64) > rb_max {
+            let raise = if (raise as u64) > rb_max {
                 rb_max
-            } else if (raise as i64) < rb_min {
+            } else if (raise as u64) < rb_min {
                 rb_min
             } else {
-                raise as i64
+                raise as u64
             };
 
             // We think this hand is worth it!
             if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
-                Action::Raise(raise)
+                if continue_cost < raise {
+                    act(Action::Call)
+                } else {
+                    Action::Raise(raise)
+                }
             } else {
                 act(Action::Call)
             }
@@ -351,7 +387,7 @@ impl PokerBot for TourneyBot {
             // Gain some data points
             if gs.round_num > 100 {
                 let opr = (self.opponent_raise_count as f64 / gs.round_num as f64).min(1.0);
-                println!("Opponent Raise Percent: {}%", opr * 100.0);
+                self.debug_print(format!("Opponent Raise Percent: {}%", opr * 100.0), 0.1);
                 if opr > RAISE_HAPPY {
                     // Our opponent is relatively raise happy. Them raising tells us nothing. ignore them and call their bluffs
                     if rng.gen_bool(opr) {
@@ -378,7 +414,11 @@ impl PokerBot for TourneyBot {
             } else {
                 // Assume the worst
                 if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
-                    Action::Raise(raise)
+                    if continue_cost > 0 {
+                        Action::Raise(raise)
+                    } else {
+                        act(Action::Call)
+                    }
                 } else {
                     act(Action::Fold)
                 }
@@ -389,14 +429,6 @@ impl PokerBot for TourneyBot {
 
 impl Drop for TourneyBot {
     fn drop(&mut self) {
-        let relations = self.relations();
-        println!("Final relations:\n{}", relations.debug_relations());
-        println!("Final guess:\n{:?}", self.running_guess);
-        println!("Final ordering: [{}]", self.ordering.iter().format(""));
-        println!("Probability engine:\n{}", self.prob_engine.probabilities().into_iter().map(|((a, b), p)| format!("{} -> {} P({})", a, b, p)).format("\n"));
-        let ignored_rules = self.prob_engine.inconsistent_rule_names();
-        for rule in ignored_rules {
-            println!("You should check rule [{}] for inconsistencies.", rule);
-        }
+        println!("{}", self.internal_state());
     }
 }

@@ -2,6 +2,7 @@ use crate::skeleton::cards::{CardValue};
 use crate::into_ordering;
 use itertools::Itertools;
 use std::collections::HashSet;
+// use crate::debug_println;
 
 trait CloneableIterator: Iterator + Clone {}
 
@@ -41,19 +42,19 @@ pub fn detect_cycles(relations: &[(CardValue, CardValue)]) -> Vec<Vec<CardValue>
     let mut cycles: Vec<Vec<CardValue>> = vec![];
     for (v, _) in &values {
         let mut potential_cycles = vec![vec![*v]];
-        // println!("Progress in chaining [{}] vs [{}]", 
+        // debug_println!("Progress in chaining [{}] vs [{}]", 
         //     potential_cycles.iter().map(|x| x.iter().format(" -> ")).format(", "),
         //     cycles.iter().map(|x| x.iter().format(" -> ")).format(", "));
         while !potential_cycles.is_empty() {
             let check: Vec<CardValue> = potential_cycles.pop().unwrap();
             assert!(!check.is_empty());
-            //println!("Checking {}", check.iter().format(" -> "));
+            //debug_println!("Checking {}", check.iter().format(" -> "));
             let first = check.iter().nth(0).unwrap();
             let last = check.iter().last().unwrap();
             let mut links: Vec<_> = values.iter().filter(|(_, (pre, _))| pre.to_owned().any(|x| &x == last)).map(|(v, _)| *v).collect();
             links.dedup();
             for link in &links {
-                //println!("Checking link {} ...", link);
+                //debug_println!("Checking link {} ...", link);
                 let mut chain = check.clone();
                 if link == first {
                     let chainh = chain.iter().copied().collect::<HashSet<_>>();
@@ -186,7 +187,7 @@ pub fn generate_ordering(relations: &[(CardValue, CardValue)]) -> [CardValue; 13
             (v, (pre, post))
         })
         .collect();
-    // println!("Generation Rules:\n{}", relations.debug_relations());
+    // debug_println!("Generation Rules:\n{}", relations.debug_relations());
     for index in 0..13 {
         let valid = original
             .iter()
@@ -198,7 +199,7 @@ pub fn generate_ordering(relations: &[(CardValue, CardValue)]) -> [CardValue; 13
                 }
             })
             .collect::<Vec<_>>();
-        // println!("Valid: [{}]", valid.iter().format(", "));
+        // debug_println!("Valid: [{}]", valid.iter().format(", "));
         // let selected = rand::random::<usize>() % valid.len();
         let selected = gen_index() % valid.len();
         let value = valid[selected];
