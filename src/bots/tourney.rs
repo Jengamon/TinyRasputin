@@ -23,6 +23,7 @@ use std::borrow::Borrow;
 // const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
 const RAISE_HAPPY: f64 = 0.7;
 const RAISE_CAUTIOUS: f64 = 0.3;
+#[cfg(not(debug_assertions))]
 const FILE_BYTE_SIZE: usize = 524288;
 
 pub struct TourneyBot {
@@ -369,7 +370,8 @@ impl PokerBot for TourneyBot {
                     let max_hand_value = ShowdownEngine::values(hand.cards().into_iter()).into_iter().max_by(|a, b| showdown_engine.value_order(&a, &b)).unwrap();
                     if self.running_guess.predicted_value(max_hand_value) - 7.0 > 5.0 {
                         // We are slightly confident this is high
-                        rng.gen_range(0.0, 0.25 * order_confidence) * pot_total as f64
+                        let ceiling = 0.25 * order_confidence;
+                        rng.gen_range(0.0, if ceiling > 0.0 { ceiling } else { 0.01 }) * pot_total as f64
                     } else {
                         0.0
                     }
