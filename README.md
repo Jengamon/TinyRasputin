@@ -22,3 +22,12 @@ shared tables between the files stay shared. We then proceed as normal.
 
 
 Inside .env is a list of all files to be packed alongside vendor-{debug|release} as variables named PACKAGE_TARGETS_{debug|release}.
+
+The dependencies other than just are 7z for the "package" and "test-package" commands, graphviz and cargo-deps for the "dep-graph" command and obviously Rust must be installed.
+Python must also be installed for the "test-package" command to work. Just call:
+
+```sh
+just python=PYTHON test-package {debug|release}
+```
+
+where PYTHON points to the python executable to use.
