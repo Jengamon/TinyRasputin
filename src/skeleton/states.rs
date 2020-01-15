@@ -4,10 +4,10 @@ use super::{
 };
 use std::cmp::{min, max};
 
-pub const NUM_ROUNDS: i64 = 1000;
-pub const STARTING_STACK: i64 = 200;
-pub const BIG_BLIND: i64 = 2;
-pub const SMALL_BLIND: i64 = 1;
+pub const NUM_ROUNDS: u64 = 1000;
+pub const STARTING_STACK: u64 = 200;
+pub const BIG_BLIND: u64 = 2;
+pub const SMALL_BLIND: u64 = 1;
 
 /// Encodes overall game progress
 #[derive(Debug, Clone, Copy)]
@@ -27,10 +27,10 @@ pub struct TerminalState {
 /// Encodes the game tree for one round of poker
 #[derive(Debug, Clone)]
 pub struct RoundState {
-    pub button: i32,
-    pub street: i32,
-    pub pips: [i64; 2],
-    pub stacks: [i64; 2],
+    pub button: u32,
+    pub street: u32,
+    pub pips: [u64; 2],
+    pub stacks: [u64; 2],
     pub hands: [Option<CardHand>; 2],
     pub deck: CardDeck,
     pub previous: Option<Box<RoundState>>,
@@ -55,21 +55,21 @@ impl RoundState {
         let continue_cost = self.pips[1 - active] - self.pips[active];
         if continue_cost == 0 {
             // We can only raise the stakes if both players can afford it
-            let bets_forbidden = (self.stacks[0] == 0) | (self.stacks[1] == 0);
+            let bets_forbidden = (self.stacks[0] == 0) || (self.stacks[1] == 0);
             if bets_forbidden { return ActionType::CHECK; }
             return ActionType::CHECK | ActionType::RAISE;
         }
         // continue_cost > 0
         // similarly, re-raising is only allowed if both players can afford it
-        let raises_forbidden = (continue_cost == self.stacks[active]) | (self.stacks[1 - active] == 0);
+        let raises_forbidden = (continue_cost == self.stacks[active]) || (self.stacks[1 - active] == 0);
         if raises_forbidden { return ActionType::FOLD | ActionType::CALL; }
         return ActionType::FOLD | ActionType::CALL | ActionType::RAISE;
     }
 
     /// Returns an array of the minimum and maximum legal raises
-    pub fn raise_bounds(&self) -> [i64; 2] {
+    pub fn raise_bounds(&self) -> [u64; 2] {
         let active: usize = self.button as usize % 2;
-        let continue_cost = self.pips[1 - active] - self.pips[active];
+        let continue_cost: u64 = self.pips[1 - active] - self.pips[active];
         let max_contrib = min(self.stacks[active], self.stacks[1-active] + continue_cost);
         let min_contrib = min(max_contrib, continue_cost + max(continue_cost, BIG_BLIND));
         [self.pips[active] + min_contrib, self.pips[active] + max_contrib]
@@ -109,7 +109,7 @@ impl RoundState {
                     delta = STARTING_STACK - self.stacks[1]
                 }
                 StateResult::Terminal(TerminalState{
-                    deltas: [delta, -delta],
+                    deltas: [delta as i64, -(delta as i64)],
                     previous: self.clone()
                 })
             },
