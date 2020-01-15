@@ -8,8 +8,8 @@ use std::time::{Duration};
 use crate::debug_println;
 
 const CONNECT_TIMEOUT: u64 = 10;
-const READ_TIMEOUT: u64 = 10;
-const WRITE_TIMEOUT: u64 = 1;
+// const READ_TIMEOUT: u64 = 10;
+// const WRITE_TIMEOUT: u64 = 1;
 
 pub struct Runner<'a> {
     stream: BufReader<TcpStream>,
@@ -22,8 +22,8 @@ impl<'a> Runner<'a> {
         if let Some(addr) = addr.to_socket_addrs()?.nth(0) {
             let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(CONNECT_TIMEOUT))?;
             stream.set_nodelay(true).expect("set_nodelay call failed");
-            stream.set_read_timeout(Some(Duration::from_secs(READ_TIMEOUT))).expect("read_timeout call failed");
-            stream.set_write_timeout(Some(Duration::from_secs(WRITE_TIMEOUT))).expect("write_timeout call failed");
+            // stream.set_read_timeout(Some(Duration::from_secs(READ_TIMEOUT))).expect("read_timeout call failed");
+            // stream.set_write_timeout(Some(Duration::from_secs(WRITE_TIMEOUT))).expect("write_timeout call failed");
             // stream.set_nonblocking(true).expect("set_nonblocking call failed");
             let mut runner = Runner {
                 stream: BufReader::new(stream),

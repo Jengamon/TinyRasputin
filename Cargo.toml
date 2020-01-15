@@ -1,26 +1,30 @@
 [package]
 name = "tinyrasputin"
-version = "1.1.0"
+version = "1.5.0"
 authors = ["Jengamon <bob.hostern@gmail.com>"]
 edition = "2018"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bitflags = "1.2"
-clap = "2.33"
-rand = "0.7"
-itertools = "0.8"
-approx = "0.3"
+bitflags = "^1.2"
+rand = "^0.7"
+itertools = "^0.8"
+approx = "^0.3"
+
+[dependencies.clap]
+version = "^2.33"
+default-features = false # We don't need clap's special features, cuz in the end, we just get a text file....
 
 [dev-dependencies]
-criterion = "0.3"
-num-format = "0.4"
+criterion = "^0.3"
+num-format = "^0.4"
 
 [profile.release]
-codegen-units = 128
+codegen-units = 16
 panic = 'abort'
-opt-level = 0 # Compiling in time is more optimal than optimizing
+opt-level = 2 # Compiling in time is more optimal than optimizing
 incremental = true
 
 [[bench]]

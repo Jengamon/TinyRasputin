@@ -114,8 +114,8 @@ impl RelationsExt for [(CardValue, CardValue)] {
         (0..ordering.len()).into_iter().fold((1, vec![]), |(count, mut seen), card| {
             // We don't know the relative ordering of these relationships, so just always count them
             let possible: Vec<_> = ordering.iter().filter(|value| {
-                let (mut pre, _, _) = relationships(&self, value);
-                pre.all(|x| seen.contains(&x))
+                let (mut pre, mut post, _) = relationships(&self, value);
+                pre.all(|x| seen.contains(&x)) && post.all(|x| !seen.contains(&x))
             }).cloned().collect();
             for value in &possible {
                 if !seen.contains(value) {
@@ -123,7 +123,11 @@ impl RelationsExt for [(CardValue, CardValue)] {
                 }
             }
             let value = possible.len().saturating_sub(card);
-            assert!(value > 0);
+            let value = if value > 0 {
+                value
+            } else {
+                1 // The number of probabilities here is exactly 1
+            };
             (count * value as u64, seen)
         }).0
     }
