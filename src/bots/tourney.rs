@@ -72,7 +72,7 @@ impl TourneyBot {
         self.relations.borrow().iter().copied().collect()
     }
 
-    #[derive(not(debug_assertions))]
+    #[cfg(not(debug_assertions))]
     fn debug_print(&mut self, string: String, necessity: f64) {
         let bytes_reserved = self.internal_state().len();
         let bytes_to_take = string.len();
@@ -84,7 +84,7 @@ impl TourneyBot {
         }
     }
 
-    #[derive(debug_assertions)]
+    #[cfg(debug_assertions)]
     fn debug_print(&mut self, string: String, necessity: f64) {
         println!("{}", string);
     }
