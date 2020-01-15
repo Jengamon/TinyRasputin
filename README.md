@@ -12,7 +12,7 @@ To use the project, you just need to understand 2 of the build targets:
 
 You have to run the commands in that order and with the same mode.
 
-Of course, you can run build-vendor on one machine, package it using the package command, and should be able to extract it and run it on another machine, which is my use case, and why I do it this way.
+Of course, you can package it using one machine, and should be able to extract it and run it on another machine, even if that other machine is not connected to the internet, which is my use case, and why I do it this way.
 
 The reason that it is done in this way is because generating the vendor directory is non-trivial, so we just want to make as small a package as possible. The release package is always built with debug_assertions off, and the debug package is always built with it on, so that is how conditional compilation is done from the same codebase.
 

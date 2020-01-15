@@ -43,20 +43,22 @@ clean mode: (_clean-package mode)
 # Erase all build artifacts
 clean-all: (clean "debug") (clean "release") (_clean-vendor "debug") (_clean-vendor "release")
 
-# Build the vendor directory for a certain mode
-build-vendor mode: (_select-cargo mode)
+_update-config mode: (_select-cargo mode)
     rm -rf .cargo
     mkdir .cargo
     cargo update
+
+# Build the vendor directory for a certain mode
+build-vendor mode: (_update-config mode)
     cargo vendor --locked vendor-{{mode}} > .cargo/config
 
 @_create_command_json mode:
     sed -e "s/MODE/{{mode}}/g" commands-template.json > commands.json
 
 # Build the packge that we will upload to the server in the specified run mode
-package mode: (_create_command_json mode) (build mode)
+package mode: (_update-config mode) (_create_command_json mode) (build mode)
     #!/usr/bin/env sh
-    echo 'Packing tinyrasputin-{{mode}}.zip for {{mode}}...'
+    echo 'Packing tinyrasputin-{{mode}}.zip...'
     for target in $PACKAGE_TARGETS_{{mode}} vendor-{{mode}}; do
         7z a -bb0 -bd tinyrasputin-{{mode}}.zip $target > nul;
     done
