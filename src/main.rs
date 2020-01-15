@@ -2,7 +2,7 @@ mod bots;
 
 use clap::{App, Arg, SubCommand, AppSettings};
 use bots::*;
-use tinyrasputin::skeleton::{runner::Runner, bot::PokerBot};
+use tinyrasputin::{debug_println, skeleton::{runner::Runner, bot::PokerBot}};
 use std::net::Ipv4Addr;
 use std::path::Path;
 use std::convert::AsRef;
@@ -82,8 +82,8 @@ fn analyze_mode<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
                     println!("Rule violation: {} -> {}", a, b);
                 }
                 let correctness = 1.0 - ((violations.len() as f64).max(1.0 / 6227020800.0) / (simplified.len() as f64).max(1.0 / 6227020800.0));
-                println!("Correctness: {}%", 100.0 * correctness);
-                println!("Likelyhood of guessing correctly: {}%", 100.0 * correctness * (1.0 - (simplified.possibilities() as f64 / 6227020800.0)));
+                println!("Correctness: {:.3}%", 100.0 * correctness);
+                println!("Likelyhood of guessing correctly: {:.3}%", 100.0 * correctness * (1.0 - (simplified.possibilities() as f64 / 6227020800.0)));
                 println!("Number of possibilities {}", simplified.possibilities());
             },
             "is_possible" => {
@@ -178,8 +178,8 @@ fn main() -> std::io::Result<()> {
         let host = matches.value_of("host").unwrap_or("127.0.0.1");
         let port = matches.value_of("port").map(|x| x.parse::<u16>().expect("Expected integer for port number")).unwrap();
         let botv = matches.value_of("bot").unwrap_or("tourney");
-        println!("Connecting to {}:{}...", host, port);
-        println!("Attempting to run bot version {}...", botv);
+        debug_println!("Connecting to {}:{}...", host, port);
+        debug_println!("Attempting to run bot version {}...", botv);
         // Change the bot type here, and as long as it implements Default, it'll be built
         let mut bot: Box<dyn PokerBot> = match botv {
             "test" => Box::new(TestBot::default()),

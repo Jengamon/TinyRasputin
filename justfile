@@ -19,7 +19,7 @@ build mode: (_vendor-exists mode)
         cargo build --offline --frozen
     fi
 
-_cargo_exists:
+@_cargo_exists:
     test -f Cargo.toml
 
 _clean-package mode:
@@ -33,7 +33,7 @@ _select-cargo mode: (clean mode)
     rm -rf Cargo.toml
     cat Cargo-header.toml Cargo-{{mode}}.toml  > Cargo.toml
 
-_vendor-exists mode: (_cargo_exists)
+@_vendor-exists mode: (_cargo_exists)
     test -d vendor-{{mode}}
 
 # Erase build artifacts for a selected mode
@@ -77,4 +77,4 @@ dep-graph mode: (_update-config mode) (_vendor-exists mode)
 
 # Count the number of lines of code in the project
 sloc:
-    @echo "`wc -l src/**/*.rs` lines of code"
+    @echo "`wc -l src/**/*.rs src/*.rs` lines of code"
