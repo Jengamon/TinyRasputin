@@ -1,4 +1,4 @@
 {
-    "build": ["just", "build_release"],
-    "run": ["just", "run_release", "bot"]
+    "build": ["just", "build-release"],
+    "run": ["just", "run-release", "bot"]
 }
