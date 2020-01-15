@@ -12,3 +12,4 @@ commands.json
 /.cargo
 vendor*
 Cargo.*
+build

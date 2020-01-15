@@ -104,7 +104,7 @@ impl RoundState {
             Action::Fold => {
                 let delta;
                 if active == 0 {
-                    delta = self.stacks[0] - STARTING_STACK
+                    delta = self.stacks[0].saturating_sub(STARTING_STACK)
                 } else {
                     delta = STARTING_STACK - self.stacks[1]
                 }

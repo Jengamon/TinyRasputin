@@ -6,9 +6,9 @@ TinyRasputin is a poker playing bot meant for MIT Pokerbots 2020, so it is expli
 Our project uses "Just" to build, so it is relatively simple to understand.
 To use the project, you just need to understand 2 of the build targets:
 
-- build-vendor {debug|release}
+- build-environment {debug|release}
 - package {debug|release}
-- run {debug|release}
+- package-run {debug|release}
 
 You have to run the commands in that order and with the same mode.
 
@@ -16,7 +16,7 @@ Of course, you can package it using one machine, and should be able to extract i
 
 The reason that it is done in this way is because generating the vendor directory is non-trivial, so we just want to make as small a package as possible. The release package is always built with debug_assertions off, and the debug package is always built with it on, so that is how conditional compilation is done from the same codebase.
 
-To actually generate vendor-{debug|release} we select the appropriate
+To actually generate vendor, we select the appropriate
 Cargo-{debug|release} and add it to Cargo-header.toml, so that any
 shared tables between the files stay shared. We then proceed as normal.
 
