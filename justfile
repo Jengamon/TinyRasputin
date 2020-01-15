@@ -5,7 +5,7 @@ export RUST_BACKTRACE := "1"
 run mode +FLAGS='': (build mode)
     #!/usr/bin/env sh
     if [ "{{mode}}" = "release" ]; then
-        cargo run --offline --frozen --release -- {{FLAGS}}
+        cargo run --offline --frozen --release -q -- {{FLAGS}}
     else
         cargo run --offline --frozen -- {{FLAGS}}
     fi
@@ -14,7 +14,7 @@ run mode +FLAGS='': (build mode)
 build mode: (_vendor-exists mode)
     #!/usr/bin/env sh
     if [ "{{mode}}" = "release" ]; then
-        cargo build --offline --frozen --release
+        cargo build --offline --frozen -q --release
     else
         cargo build --offline --frozen
     fi
