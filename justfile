@@ -10,7 +10,7 @@ run mode +FLAGS='': (build mode)
         cargo run --offline --frozen -- {{FLAGS}}
     fi
 
-# Build in release mode
+# Build in specified mode
 build mode: (_vendor-exists mode)
     #!/usr/bin/env sh
     if [ "{{mode}}" = "release" ]; then
@@ -37,11 +37,11 @@ _vendor-exists mode: (_cargo_exists)
     test -d vendor-{{mode}}
 
 # Erase build artifacts for a selected mode
-clean mode: (_clean-package mode)
+clean mode:
     rm -rf target
 
 # Erase all build artifacts
-clean-all: (clean "debug") (clean "release") (_clean-vendor "debug") (_clean-vendor "release")
+clean-all: (clean "debug") (_clean-package "debug") (clean "release") (_clean-package "release") (_clean-vendor "debug") (_clean-vendor "release")
 
 _update-config mode: (_select-cargo mode)
     rm -rf .cargo
@@ -71,9 +71,9 @@ _create-test-directory mode:
 test-package mode: (_create-test-directory mode)
     cd .. && {{python}} engine.py
 
-# Create a dependency graph
-dep-graph:
-    cargo deps --all-deps | dot -Tpng > graph.png
+# Create a dependency graph for a mode
+dep-graph mode: (_update-config mode) (_vendor-exists mode)
+    cargo deps --all-deps | dot -Tpng > graph-{{mode}}.png
 
 # Count the number of lines of code in the project
 sloc:
