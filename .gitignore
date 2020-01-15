@@ -1,6 +1,6 @@
 /target
 **/*.rs.bk
-/vendor
+/vendor*
 /.cargo
 /test
 nul
@@ -8,3 +8,7 @@ nul
 *.txt
 *.zip
 *.png
+commands.json
+/.cargo
+vendor*
+Cargo.*

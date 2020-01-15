@@ -1,0 +1,9 @@
+[dependencies.clap]
+version = "^2.33"
+default-features = false # We don't need clap's special features by default, cuz in the end, we just get a text file....
+
+[profile.release]
+codegen-units = 16
+# panic = 'abort'
+opt-level = 2 # Compiling in time is more optimal than optimizing
+incremental = true

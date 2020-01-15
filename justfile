@@ -1,50 +1,72 @@
-package_targets := ".cargo benches justfile src vendor Cargo.toml Cargo.lock commands.json"
 python := "python"
 export RUST_BACKTRACE := "1"
 
-# Run using a debug build
-run-debug +FLAGS='': build-debug
-    cargo run -- {{FLAGS}}
-
-# Run using a release build
-run-release +FLAGS='': build-release
-    cargo run --offline --frozen --release -- {{FLAGS}}
-
-# Build in debug mode
-build-debug:
-    cargo build --features "clap/suggestions clap/color" --lib
+# Run using a specified build
+run mode +FLAGS='': (build mode)
+    #!/usr/bin/env sh
+    if [ "{{mode}}" = "release" ]; then
+        cargo run --offline --frozen --release -- {{FLAGS}}
+    else
+        cargo run --offline --frozen -- {{FLAGS}}
+    fi
 
 # Build in release mode
-build-release:
-    cargo build --offline --frozen --release
+build mode: (_vendor-exists mode)
+    #!/usr/bin/env sh
+    if [ "{{mode}}" = "release" ]; then
+        cargo build --offline --frozen --release
+    else
+        cargo build --offline --frozen
+    fi
 
-@_clean-package:
-    rm -f tinyrasputin.zip
+_cargo_exists:
+    test -f Cargo.toml
 
-@_clean-vendor:
-    rm -rf vendor
+_clean-package mode:
+    rm -f tinyrasputin-{{mode}}.zip
 
-# Erase build artifacts
-clean: _clean-package _clean-vendor
+_clean-vendor mode:
+    rm -rf vendor-{{mode}}
+
+# Select a Cargo file based off of the desired mode
+_select-cargo mode: (clean mode)
+    rm -rf Cargo.toml
+    cat Cargo-header.toml Cargo-{{mode}}.toml  > Cargo.toml
+
+_vendor-exists mode: (_cargo_exists)
+    test -d vendor-{{mode}}
+
+# Erase build artifacts for a selected mode
+clean mode: (_clean-package mode)
     rm -rf target
 
-# Update the vendor directory
-update-vendor: _clean-vendor
-    cargo vendor
+# Erase all build artifacts
+clean-all: (clean "debug") (clean "release") (_clean-vendor "debug") (_clean-vendor "release")
 
-# Build the packge that we will upload to the server
-@package: _clean-package
-    echo 'Packing tinyrasputin.zip for release...'
-    for target in {{package_targets}}; do \
-        7z a -bb0 -bd tinyrasputin.zip $target > nul; \
+# Build the vendor directory for a certain mode
+build-vendor mode: (_select-cargo mode)
+    rm -rf .cargo
+    mkdir .cargo
+    cargo update
+    cargo vendor --locked vendor-{{mode}} > .cargo/config
+
+@_create_command_json mode:
+    sed -e "s/MODE/{{mode}}/g" commands-template.json > commands.json
+
+# Build the packge that we will upload to the server in the specified run mode
+package mode: (_create_command_json mode) (build mode)
+    #!/usr/bin/env sh
+    echo 'Packing tinyrasputin-{{mode}}.zip for {{mode}}...'
+    for target in $PACKAGE_TARGETS_{{mode}} vendor-{{mode}}; do
+        7z a -bb0 -bd tinyrasputin-{{mode}}.zip $target > nul;
     done
 
-_create-test-directory:
+_create-test-directory mode:
     rm -rf ../server_tinyrasputin
-    7z x -bb0 -y -o../server_tinyrasputin -- tinyrasputin.zip > nul
+    7z x -bb0 -y -o../server_tinyrasputin -- tinyrasputin-{{mode}}.zip > nul
 
-# Build the package while testing what it would do on the server
-test-package: _create-test-directory
+# Test the built package of the specified mode
+test-package mode: (_create-test-directory mode)
     cd .. && {{python}} engine.py
 
 # Create a dependency graph
