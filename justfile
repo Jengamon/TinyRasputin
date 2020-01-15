@@ -33,7 +33,7 @@ package-run mode +FLAGS='': (package-build mode)
     fi
 
 # Builds tinyrasputin in a certain mode
-package-build mode: (_build-dir-exists mode) (_copy-files mode) (_package-vendor-exists mode)
+package-build mode: (_build-dir-exists mode) (_copy-files mode)
     #!/usr/bin/env sh
     cd {{build-dir}}/{{mode}}
     if [ "{{mode}}" = "release" ]; then
@@ -92,10 +92,6 @@ _copy-files mode: (_build-dir-exists mode) (_copy_base_files mode) (_create_comm
         test -e $file; \
     done
 
-@_package-vendor-exists mode:
-    test -d {{build-dir}}/{{mode}}/vendor
-    test -f {{build-dir}}/{{mode}}/.cargo/config
-
 # Erase build artifacts for a selected mode
 @clean-target mode:
     rm -rf {{build-dir}}/{{mode}}
@@ -140,11 +136,10 @@ test-package mode: (_create-test-directory mode) (_package-exists mode)
     cd .. && {{python}} engine.py
 
 # Create a dependency graph for a mode
-dep-graph mode: (_package-vendor-exists mode)
-    #!/usr/bin/env
+dep-graph mode: (_build-dir-exists mode)
+    #!/usr/bin/env sh
     cd {{build-dir}}/{{mode}}
-    test -d .cargo
-    cargo deps --all-deps | dot -Tpng > graph-{{mode}}.png
+    cargo deps --all-deps | dot -Tpng > ../../graph-{{mode}}.png
 
 # Count the number of lines of code in the project
 sloc:
