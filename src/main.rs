@@ -185,7 +185,7 @@ fn main() -> std::io::Result<()> {
             "test" => Box::new(TestBot::default()),
             "l1" => Box::new(Lesson1Bot::default()),
             "l2" => Box::new(Lesson2Bot::default()),
-            "tourney" => Box::new(TourneyBot::default()),
+            "tourney" => Box::new(TourneyV1Bot::default()),
             _ => panic!("Invalid bot version: {}", botv)
         };
         Runner::run_bot(&mut bot, (host.parse::<Ipv4Addr>().expect("Expected IPv4 address for host"), port))
