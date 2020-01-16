@@ -85,7 +85,7 @@ jobs:
   
   build-windows:
     runs-on: windows-latest
-    need: build-latest-just-windows
+    needs: build-latest-just-windows
 
     steps:
     - uses: actions/checkout@v2
