@@ -1,4 +1,4 @@
-# TinyRasputin
+# TinyRasputin <img src="https://github.com/Jengamon/TinyRasputin/workflows/Rust/badge.svg">
 
 TinyRasputin is a poker playing bot meant for MIT Pokerbots 2020, so it is explicitly designed to work with their engine.
 
