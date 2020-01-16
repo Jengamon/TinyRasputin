@@ -73,7 +73,7 @@ build-environment: (_select-cargo) (_clean-vendor)
     cd {{build-dir}}/{{mode}} && cargo update
     cd {{build-dir}}/{{mode}} && cargo vendor vendor > .cargo/config
 
-_create-command-json +FLAGS='':
+_create-command-json +FLAGS='': (_build-dir-exists)
     sed -e "s/MODE/{{mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run mode

@@ -131,7 +131,7 @@ jobs:
       run: echo $PATH && just --list
     - name: Setup environment
       shell: bash
-      run: just env
+      run: just env && just mode=release env
     - name: Build
       shell: bash
       run: just package-build
