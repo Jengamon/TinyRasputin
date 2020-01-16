@@ -19,7 +19,7 @@ jobs:
       id: cache
       with:
         path: ~/.cargo
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo
     - name: Install just
       if: steps.cache.outputs.cache-hit != 'true'
       run: cargo install just
