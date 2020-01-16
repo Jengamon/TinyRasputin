@@ -10,18 +10,43 @@ export RUST_BACKTRACE := "1"
 alias rebuild := rebuild-environment
 alias clean := clean-environment
 alias env := build-environment
-alias build := package-build
-alias run := package-run
-alias test := package-test
+alias build := local-build
+alias run := local-run
+alias test := local-test
 
-# Runs tinyrasputin in a certain mode
+# Runs tinyrasputin in a certain mode locally
+local-run +FLAGS='': (local-build)
+    if [ {{mode}} = release ]; then \
+        cargo run --offline --release --manifest-path {{build-dir}}/{{mode}}/Cargo.toml -- {{FLAGS}}; \
+    else \
+        cargo run --offline --manifest-path {{build-dir}}/{{mode}}/Cargo.toml -- {{FLAGS}}; \
+    fi
+
+# Builds tinyrasputin in a certain mode locally
+local-build: (_copy-files)
+    if [ {{mode}} = release ]; then \
+        cargo build --offline --release --manifest-path {{build-dir}}/{{mode}}/Cargo.toml; \
+    else \
+        cargo build --offline --manifest-path {{build-dir}}/{{mode}}/Cargo.toml; \
+    fi
+
+# Tests tinyrasputin in a certain mode locally
+local-test +FLAGS='': (local-build)
+    if [ {{mode}} = release ]; then \
+        cargo test --offline --release --manifest-path {{build-dir}}/{{mode}}/Cargo.toml -- {{FLAGS}}; \
+    else \
+        cargo test --offline --manifest-path {{build-dir}}/{{mode}}/Cargo.toml -- {{FLAGS}}; \
+    fi
+
+# Runs tinyrasputin in a certain mode as it would run in package mode
 package-run +FLAGS='': (package-build)
     cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} run {{FLAGS}}
 
 # Builds tinyrasputin in a certain mode
-package-build: (_build-dir-exists) (_copy-files) (_generate-package-listing)
+package-build: (_select-cargo) (_copy-files) (_generate-package-listing)
     cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} build
 
+# Tests tiny rasputin in a certain mode as it would run in package mode
 package-test +FLAGS='': (package-build)
     cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} test {{FLAGS}}
 
@@ -41,7 +66,7 @@ _copy-files: (_build-dir-exists)
     @echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired mode
-_select-cargo: (clean-environment) (_make-build-dir) (_copy-files)
+_select-cargo: (_build-dir-exists) (_copy-files)
     rm -rf {{build-dir}}/{{mode}}/Cargo.toml
     cat Cargo-header.toml Cargo-{{mode}}.toml  > {{build-dir}}/{{mode}}/Cargo.toml
     @echo "Created Cargo.toml for {{mode}} build."
@@ -65,7 +90,7 @@ clean-all:
     rm -rf {{build-dir}}
 
 # Build the build directory for a certain mode
-build-environment: (_select-cargo) (_clean-vendor)
+build-environment: (clean-environment) (_make-build-dir) (_select-cargo) (_clean-vendor)
     rm -rf {{build-dir}}/{{mode}}/.cargo
     mkdir {{build-dir}}/{{mode}}/.cargo
     cd {{build-dir}}/{{mode}} && cargo update

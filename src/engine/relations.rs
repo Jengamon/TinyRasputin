@@ -115,15 +115,11 @@ impl RelationsExt for [(CardValue, CardValue)] {
             // We don't know the relative ordering of these relationships, so just always count them
             let possible: Vec<_> = ordering.iter().filter(|value| {
                 let (mut pre, mut post, _) = relationships(&self, value);
-                pre.all(|x| seen.contains(&x)) && post.all(|x| !seen.contains(&x))
+                pre.all(|x| seen.contains(&x)) && !post.any(|x| seen.contains(&x))
             }).cloned().collect();
             let value = possible.len().saturating_sub(seen.len());
-            // debug_println!("Possible Len: {} ({})", possible.len(), seen.len());
-            let value = if value > 0 {
-                value
-            } else {
-                1
-            };
+            let value = if value == 0 { 1 } else { value };
+            // debug_println!("Possible Len: {} ({}) [{}]", possible.len(), seen.len(), value);
             seen.push(*cv);
             (count * value as u64, seen)
         }).0
@@ -250,6 +246,8 @@ pub fn cycles_test() {
 fn relations_ext_test() {
     let test = vec![];
     let test2 = vec![(CardValue::Two, CardValue::Ace)];
+    let test3 = vec![(CardValue::Two, CardValue::Ace), (CardValue::Three, CardValue::Ace)];
     assert_eq!(test.possibilities(), 13 * 12 * 11 * 10 * 9 * 8 * 7 * 6 * 5 * 4  * 3 * 2);
     assert_eq!(test2.possibilities(), 12 * 12 * 11 * 10 * 9 * 8 * 7 * 6 * 5 * 4  * 3 * 2);
+    assert_eq!(test3.possibilities(), 12 * 11 * 11 * 10 * 9 * 8 * 7 * 6 * 5 * 4  * 3 * 2);
 }

@@ -73,7 +73,7 @@ fn analyze_mode<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
                 assert!(order.len() == 13);
                 println!("Correctness check for {}", order.iter().format(" -> "));
                 println!("Rule count: {} ({})", relations.len(), simplified.len());
-                let violations = simplified.iter().filter(|(a, b)| {
+                let violations = relations.iter().filter(|(a, b)| {
                     let a_index = order.iter().position(|x| x == a);
                     let b_index = order.iter().position(|x| x == b);
                     b_index < a_index
@@ -81,10 +81,11 @@ fn analyze_mode<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
                 for (a, b) in violations.iter() {
                     println!("Rule violation: {} -> {}", a, b);
                 }
-                let correctness = 1.0 - ((violations.len() as f64).max(1.0 / 6227020800.0) / (simplified.len() as f64).max(1.0 / 6227020800.0));
+                let correctness = 1.0 - ((violations.len() as f64).max(0.0) / (relations.len() as f64).max(1.0));
+                let selected_possibilities = simplified.into_iter().filter(|x| !violations.contains(&x)).collect::<Vec<_>>().possibilities();
                 println!("Correctness: {:.3}%", 100.0 * correctness);
-                println!("Likelyhood of guessing correctly: {:.3}%", 100.0 * correctness * (1.0 - (simplified.possibilities() as f64 / 6227020800.0)));
-                println!("Number of possibilities {}", simplified.possibilities());
+                println!("Selected {} correct possibilities", selected_possibilities);
+                println!("Likelyhood of guessing correctly: {:.3}%", 100.0 * correctness * (1.0 - (selected_possibilities as f64 / 6227020800.0)));
             },
             "is_possible" => {
                 let order = into_ordering!(vec lines.remove(0).chars().map(|c| c.to_string().parse::<CardValue>()).collect::<Vec<_>>());
