@@ -135,9 +135,7 @@ test-package: (_create-test-directory) (_package-exists)
 
 # Create a dependency graph for a mode
 dep-graph: (_build-dir-exists)
-    #!/usr/bin/env sh
-    cd {{build-dir}}/{{mode}}
-    cargo deps --all-deps | dot -Tpng > ../../graph-{{mode}}.png
+    cd {{build-dir}}/{{mode}} && cargo deps --all-deps | dot -Tpng > ../../graph-{{mode}}.png
 
 # Count the number of lines of code in the project
 sloc:
