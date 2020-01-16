@@ -5,24 +5,24 @@ mode := "debug"
 # Run using a specified local mode (can only be called on built packages)
 run +FLAGS='': (build)
     if [ {{mode}} = release ]; then \
-        cargo run --offline --frozen --release -q -- {{FLAGS}} \
+        cargo run --offline --frozen --release -q -- {{FLAGS}}; \
     else \
-        cargo run --offline --frozen -- {{FLAGS}} \
+        cargo run --offline --frozen -- {{FLAGS}}; \
     fi
 
 # Build using specified local mode (can only be called on built packages)
 build: (_package-complete)
     if [ {{mode}} = release ]; then \
-        cargo build --offline --frozen -q --release \
+        cargo build --offline --frozen -q --release; \
     else \
-        cargo build --offline --frozen \
+        cargo build --offline --frozen; \
     fi
 
 test +FLAGS='': (build)
     if [ {{mode}} = release ]; then \
-        cargo test --offline --frozen --release -q -- {{FLAGS}} \
+        cargo test --offline --frozen --release -q -- {{FLAGS}}; \
     else \
-        cargo test --offline --frozen -- {{FLAGS}} \
+        cargo test --offline --frozen -- {{FLAGS}}; \
     fi
 
 @_package-listing-exists:
