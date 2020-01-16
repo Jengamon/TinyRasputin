@@ -91,9 +91,9 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: linux-just
-        path: "linux-just"
+        path: "just"
     - name: Add just to PATH
-      run: echo "::add-path::linux-just"
+      run: echo "::add-path::just"
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just
@@ -121,9 +121,9 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: windows-just
-        path: "windows-just"
+        path: "just"
     - name: Add just to PATH
-      run: echo "::add-path::linux-just"
+      run: echo "::add-path::just"
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just
