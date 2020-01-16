@@ -6,9 +6,9 @@ TinyRasputin is a poker playing bot meant for MIT Pokerbots 2020, so it is expli
 Our project uses "Just" to build, so it is relatively simple to understand.
 To use the project, you just need to understand 2 of the build targets:
 
-- build-environment {debug|release}
-- package {debug|release}
-- package-run {debug|release}
+- mode={debug|release} build-environment
+- mode={debug|release} package
+- mode={debug|release} package-run
 
 You have to run the commands in that order and with the same mode.
 
@@ -27,7 +27,7 @@ The dependencies other than just are 7z for the "package" and "test-package" com
 Python must also be installed for the "test-package" command to work. Just call:
 
 ```sh
-just python=PYTHON test-package {debug|release}
+just python=PYTHON mode={debug|release} test-package
 ```
 
 where PYTHON points to the python executable to use.

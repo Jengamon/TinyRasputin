@@ -1,29 +1,16 @@
 python := "python"
 build-dir := "build"
+mode := "debug"
+package_targets := "PACKAGE_TARGETS_" + mode
+
 export RUST_BACKTRACE := "1"
 
 alias rebuild := rebuild-environment
-
-# Run using a specified local mode (can only be called on built packages)
-run mode +FLAGS='': (build mode)
-    #!/usr/bin/env sh
-    if [ "{{mode}}" = "release" ]; then
-        cargo run --offline --frozen --release -q -- {{FLAGS}}
-    else
-        cargo run --offline --frozen -- {{FLAGS}}
-    fi
-
-# Build using specified local mode (can only be called on built packages)
-build mode: (_package-complete mode)
-    #!/usr/bin/env sh
-    if [ "{{mode}}" = "release" ]; then
-        cargo build --offline --frozen -q --release
-    else
-        cargo build --offline --frozen
-    fi
+alias clean := clean-environment
+alias env := build-environment
 
 # Runs tinyrasputin in a certain mode
-package-run mode +FLAGS='': (package-build mode)
+package-run +FLAGS='': (package-build)
     #!/usr/bin/env sh
     cd {{build-dir}}/{{mode}}
     if [ "{{mode}}" = "release" ]; then
@@ -33,49 +20,65 @@ package-run mode +FLAGS='': (package-build mode)
     fi
 
 # Builds tinyrasputin in a certain mode
-package-build mode: (_build-dir-exists mode) (_copy-files mode)
+package-build: (_build-dir-exists) (_copy-files)
     #!/usr/bin/env sh
     cd {{build-dir}}/{{mode}}
+    echo 'Building on {{arch()}}:{{os()}}'
     if [ "{{mode}}" = "release" ]; then
         cargo build --offline --frozen -q --release
     else
         cargo build --offline --frozen
     fi
 
-@_make-build-dir mode: 
+# Run using a specified local mode (can only be called on built packages)
+run +FLAGS='': (build)
+    #!/usr/bin/env sh
+    if [ "{{mode}}" = "release" ]; then
+        cargo run --offline --frozen --release -q -- {{FLAGS}}
+    else
+        cargo run --offline --frozen -- {{FLAGS}}
+    fi
+
+# Build using specified local mode (can only be called on built packages)
+build: (_package-complete)
+    #!/usr/bin/env sh
+    if [ "{{mode}}" = "release" ]; then
+        cargo build --offline --frozen -q --release
+    else
+        cargo build --offline --frozen
+    fi
+
+@_make-build-dir: 
     mkdir -p {{build-dir}}/{{mode}}
     echo "Created environment for {{mode}} build."
 
-@_build-dir-exists mode:
+@_build-dir-exists:
     test -d {{build-dir}}/{{mode}}
 
-_copy-files mode: (_build-dir-exists mode) (_copy_base_files mode) (_create_command_json mode)
-    #!/usr/bin/env sh
-    echo 'Copying over extra target files for {{mode}} build'
-    if [ ! -z $PACKAGE_TARGETS_{{mode}} ]; then
-        cp -uf -t {{build-dir}}/{{mode}} $PACKAGE_TARGETS_{{mode}};
+@_copy-files: (_build-dir-exists) (_copy_base_files)
+    if [ ! -z {{env_var(package_targets)}} ]; then \
+        echo 'Copying over extra target files for {{mode}} build'; \
+        cp -r -t {{build-dir}}/{{mode}} {{env_var(package_targets)}}; \
     fi
 
-@_copy_base_files mode: (_build-dir-exists mode)
-    cp -r src {{build-dir}}/{{mode}}/src
-    cp justfile {{build-dir}}/{{mode}}/justfile
-    cp .env {{build-dir}}/{{mode}}/.env
+@_copy_base_files: (_build-dir-exists)
+    cp -rt {{build-dir}}/{{mode}} src justfile .env
     echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired mode
-@_select-cargo mode: (clean-target mode)  (_make-build-dir mode) (_copy_base_files mode) (_copy-files mode)
+@_select-cargo: (clean-environment)  (_make-build-dir) (_copy_base_files) (_copy-files)
     rm -rf {{build-dir}}/{{mode}}/Cargo.toml
     cat Cargo-header.toml Cargo-{{mode}}.toml  > {{build-dir}}/{{mode}}/Cargo.toml
     echo "Created Cargo.toml for {{mode}} build."
 
-@_clean-package mode:
+@_clean-package:
     rm -f tinyrasputin-{{mode}}.zip
 
-@_clean-vendor mode:
+@_clean-vendor:
     rm -rf {{build-dir}}/{{mode}}/vendor
 
 # Checks if a package is theoretically complete
-@_package-complete mode:
+@_package-complete:
     test -d vendor
     test -f .cargo/config
     test -f Cargo.toml
@@ -84,23 +87,23 @@ _copy-files mode: (_build-dir-exists mode) (_copy_base_files mode) (_create_comm
     if [ {{mode}} = "debug" ]; then \
         echo 'Base package coherent, checking for extra files...'; \
     fi
-    for file in $PACKAGE_TARGETS_{{mode}}; do \
+    for file in {{env_var(package_targets)}}; do \
         if [ {{mode}} = "debug" ]; then \
             echo Checking for $file...; \
         fi; \
-        test -e $file; \
+        test -e "./$file"; \
     done
 
 # Erase build artifacts for a selected mode
-@clean-target mode:
+clean-environment:
     rm -rf {{build-dir}}/{{mode}}
 
 # Erase all build artifacts
-@clean-all:
+clean-all:
     rm -rf {{build-dir}}
 
 # Build the build directory for a certain mode
-build-environment mode: (_select-cargo mode) (_clean-vendor mode)
+build-environment: (_select-cargo) (_clean-vendor)
     #!/usr/bin/env sh
     rm -rf {{build-dir}}/{{mode}}/.cargo
     mkdir {{build-dir}}/{{mode}}/.cargo
@@ -108,11 +111,11 @@ build-environment mode: (_select-cargo mode) (_clean-vendor mode)
     cargo update
     cargo vendor vendor > .cargo/config
 
-@_create_command_json mode:
-    sed -e "s/MODE/{{mode}}/g" commands-template.json > {{build-dir}}/{{mode}}/commands.json
+@_create_command_json +FLAGS='':
+    sed -e "s/MODE/{{mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run mode
-package mode: (_clean-package mode) (package-build mode)
+package +FLAGS='': (_clean-package) (package-build) (_create_command_json FLAGS)
     #!/usr/bin/env sh
     echo 'Packing tinyrasputin-{{mode}}.zip...'
     cd {{build-dir}}/{{mode}}
@@ -122,21 +125,21 @@ package mode: (_clean-package mode) (package-build mode)
     done
 
 # Build the environment then repackage
-rebuild-environment mode: (build-environment mode) (package mode)
+rebuild-environment: (build-environment) (package)
 
-@_package-exists mode:
+@_package-exists:
     test -f tinyrasputin-{{mode}}.zip
 
-_create-test-directory mode: (_package-exists mode) (package-build mode)
+_create-test-directory: (_package-exists)
     rm -rf ../server_tinyrasputin
     7z x -bb0 -y -o../server_tinyrasputin -- tinyrasputin-{{mode}}.zip > nul
 
 # Test the built package of the specified mode
-test-package mode: (_create-test-directory mode) (_package-exists mode)
+test-package: (_create-test-directory) (_package-exists)
     cd .. && {{python}} engine.py
 
 # Create a dependency graph for a mode
-dep-graph mode: (_build-dir-exists mode)
+dep-graph: (_build-dir-exists)
     #!/usr/bin/env sh
     cd {{build-dir}}/{{mode}}
     cargo deps --all-deps | dot -Tpng > ../../graph-{{mode}}.png

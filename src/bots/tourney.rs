@@ -1,1 +1,3 @@
-pub fn use tourney::TourneyV1Bot;
+mod v1;
+
+pub use self::v1::TourneyV1Bot;
