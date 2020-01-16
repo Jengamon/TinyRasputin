@@ -43,7 +43,7 @@ local-test +FLAGS='': (local-build)
     fi
 
 # Builds tinyrasputin in a certain package-mode
-package-build: (_select-cargo package-mode) (_copy-files package-mode) (_generate-package-listing package-mode)
+package-build +FLAGS='': (_select-cargo package-mode) (_copy-files package-mode FLAGS)
     cd {{build-dir}}/{{package-mode}} && just -d . --justfile justfile mode={{run-mode}} build
 
 # Tests tiny rasputin in a certain package-mode as it would run in package package-mode
@@ -60,7 +60,7 @@ _build-dir-exists mode:
 _vendor-exists mode: (_build-dir-exists mode)
     test -d {{build-dir}}/{{mode}}/vendor
 
-_copy-files mode: (_build-dir-exists mode)
+_copy-files mode +FLAGS="": (_build-dir-exists mode) (_create-command-json mode FLAGS) (_generate-package-listing package-mode)
     cp -rt {{build-dir}}/{{mode}} {{base-package}}
     cp package-justfile {{build-dir}}/{{mode}}/justfile
     @echo 'Renewed basic build environment for {{mode}} build'
@@ -77,7 +77,7 @@ _clean-package mode:
 _clean-vendor mode:
     rm -rf {{build-dir}}/{{mode}}/vendor
 
-_generate-package-listing mode: (_vendor-exists mode) (_copy-files mode)
+_generate-package-listing mode: (_vendor-exists mode)
     rm -rf {{build-dir}}/{{mode}}/.package-list
     cd {{build-dir}}/{{mode}} && find {{package-contents}} -type f -print > .package-list
 
@@ -101,7 +101,7 @@ _create-command-json mode +FLAGS='': (_build-dir-exists mode)
     sed -e "s/MODE/{{package-mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{package-mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run package-mode
-package +FLAGS='': (_clean-package package-mode) (_create-command-json package-mode FLAGS) (package-build) (_generate-package-listing package-mode)
+package +FLAGS='': (_clean-package package-mode) (_copy-files package-mode FLAGS) (package-build FLAGS)
     @echo 'Packing tinyrasputin-{{package-mode}}.zip...'
     cd {{build-dir}}/{{package-mode}} && 7z a -r ../../tinyrasputin-{{package-mode}}.zip {{package-contents}}
 
