@@ -134,7 +134,15 @@ jobs:
       run: just env
     - name: Build
       shell: bash
-      run: cd build/debug/ && just build
+      run: just package-build
     - name: Run tests
       shell: bash
-      run: cd build/debug/ && just test
+      run: just package-test
+    - name: Build release package
+      shell: bash
+      run: just mode=release package
+    - name: Upload release package
+      uses: actions/upload-artifact@v1
+      with:
+        name: windows-release-build
+        path: tinyrasputin-release.zip
