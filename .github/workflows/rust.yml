@@ -12,6 +12,9 @@ jobs:
   build-latest-just-linux:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v2
+        with:
+          repository: 'casey/just'
       - name: Update registry
         run: cargo update
       - name: Cache cargo registry
