@@ -14,7 +14,7 @@ itertools = "^0.8"
 approx = "^0.3"
 
 [profile.release]
-codegen-units = 16
+codegen-units = 256
 # panic = 'abort'
 opt-level = 2 # Compiling in time is more optimal than optimizing
 incremental = true
