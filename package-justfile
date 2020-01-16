@@ -1,5 +1,3 @@
-python := "python"
-build-dir := "build"
 mode := "debug"
 
 # Run using a specified local mode (can only be called on built packages)
