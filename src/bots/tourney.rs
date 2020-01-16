@@ -81,6 +81,9 @@ impl PokerBot for TourneyBot {
             // TODO Add relations that we are sure of
             self.ordering = new_order;
         }
+        if gs.round_num % 100 == 0 {
+            print!("my guess: {:?}", self.running_guess);
+        }
         // println!("Ordering: [{}]", self.ordering.iter().format(","));
         //println!("Round bot state: {:?}", self);
     }
@@ -311,7 +314,7 @@ impl PokerBot for TourneyBot {
                     } else {
                         // Is it worth it? Right now, we only bet on high cards as long as the continue cost is less than 50 and our stack is more than 100
                         if continue_cost < 50 && my_stack > 100 {
-                            rng.gen_range(0.0, 50.0)
+                            rng.gen_range(0.0, 10.0)
                         } else {
                             0.0
                         }
