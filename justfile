@@ -38,10 +38,6 @@ local-test +FLAGS='': (local-build)
         cargo test --offline --manifest-path {{build-dir}}/{{mode}}/Cargo.toml -- {{FLAGS}}; \
     fi
 
-# Runs tinyrasputin in a certain mode as it would run in package mode
-package-run +FLAGS='': (package-build)
-    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} run {{FLAGS}}
-
 # Builds tinyrasputin in a certain mode
 package-build: (_select-cargo) (_copy-files) (_generate-package-listing)
     cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} build
