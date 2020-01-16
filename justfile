@@ -82,7 +82,7 @@ _generate-package-listing mode: (_vendor-exists mode)
     cd {{build-dir}}/{{mode}} && find {{package-contents}} -type f -print > .package-list
 
 # Erase build artifacts for a selected package-mode
-clean-environment mode: (_clean-package mode)
+clean-environment mode: (_clean-package mode) (_clean-vendor mode)
     rm -rf {{build-dir}}/{{mode}}
 
 # Erase all build artifacts
@@ -91,7 +91,7 @@ clean-all: (_clean-package "debug") (_clean-package "release")
     rm -rf target
 
 # Build the build directory for a certain package-mode
-build-environment: (clean-environment package-mode) (_make-build-dir package-mode) (_select-cargo package-mode) (_clean-vendor package-mode)
+build-environment: (clean-environment package-mode) (_make-build-dir package-mode) (_select-cargo package-mode)
     rm -rf {{build-dir}}/{{package-mode}}/.cargo
     mkdir {{build-dir}}/{{package-mode}}/.cargo
     cd {{build-dir}}/{{package-mode}} && cargo update
