@@ -99,22 +99,15 @@ jobs:
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just --list
-    - name: Export PATH
-      shell: bash
-      run: export PATH
     - name: Setup environment
-      run: just env && just mode=release env
+      shell: bash
+      run: just env
     - name: Build
-      run: just --shell "PATH=$PATH bash -c" package-build
+      shell: bash
+      run: cd build/debug/ && just build
     - name: Run tests
-      run: just --shell "PATH=$PATH bash -c" package-test
-    - name: Build release package
-      run: just --shell "PATH=$PATH bash -c" mode=release package
-    - name: Upload release package
-      uses: actions/upload-artifact@v1
-      with:
-        name: linux-release-build
-        path: tinyrasputin-release.zip
+      shell: bash
+      run: cd build/debug/ && just test
   
   build-windows:
     runs-on: windows-latest
@@ -132,23 +125,12 @@ jobs:
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just --list
-    - name: Export PATH
-      shell: bash
-      run: export PATH
     - name: Setup environment
       shell: bash
-      run: just env && just mode=release env
+      run: just env
     - name: Build
       shell: bash
-      run: just --shell "PATH=$PATH bash -c" package-build
+      run: cd build/debug/ && just build
     - name: Run tests
       shell: bash
-      run: just --shell "PATH=$PATH bash -c" package-test
-    - name: Build release package
-      shell: bash
-      run: just --shell "PATH=$PATH bash -c" mode=release package
-    - name: Upload release package
-      uses: actions/upload-artifact@v1
-      with:
-        name: windows-release-build
-        path: tinyrasputin-release.zip
+      run: cd build/debug/ && just test
