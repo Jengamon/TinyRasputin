@@ -36,7 +36,7 @@ pub struct TourneyV1Bot {
     relations_dirty: Cell<bool>,
 
     // Learn your opponent to learn what you should do
-    opponent_raise_count: i64,
+    opponent_raise_count: u32,
     running_guess: Guess,
 
     // How many bytes have we output?
@@ -58,8 +58,8 @@ impl Default for TourneyV1Bot {
 }
 
 impl TourneyV1Bot {
-    fn add_relationship<S>(&mut self, log_string: S, strength: f64, a: CardValue, b: CardValue) where S: Borrow<str> {
-        self.running_guess.update(a, b, strength as f32);
+    fn add_relationship<S>(&mut self, log_string: S, round_num: u32, strength: f64, a: CardValue, b: CardValue) where S: Borrow<str> {
+        self.running_guess.update(a, b, round_num, strength as f32);
         if self.prob_engine.update(log_string.borrow(), &a, &b, strength) {
             self.debug_print(format!("[{}] Saw relationship {} -> {} with strength {:.2}...", log_string.borrow(), a, b, strength), 0.3);
             self.relations_dirty.set(true);
@@ -198,9 +198,9 @@ impl PokerBot for TourneyV1Bot {
                     if my_delta != 0 {
                         match (actual_winner, actual_loser) {
                             // Same hand type relations
-                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
-                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::Pair(winner), Hand::Pair(loser)) => self.add_relationship("pair -> pair", gs.round_num, 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::ThreeOfAKind(winner), Hand::ThreeOfAKind(loser)) => self.add_relationship("3k -> 3k", gs.round_num, 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
+                            (Hand::FourOfAKind(winner), Hand::FourOfAKind(loser)) => self.add_relationship("4k -> 4k", gs.round_num, 0.9, showdown_engine.highest_card_value(loser), showdown_engine.highest_card_value(winner)),
                             (Hand::FullHouse(winner), Hand::FullHouse(loser)) => {
                                 let (winner_triple_value, winner_pair_value) = {
                                     let values = ShowdownEngine::values(winner.iter());
@@ -224,9 +224,9 @@ impl PokerBot for TourneyV1Bot {
                                     }
                                 };
                                 if winner_triple_value != loser_triple_value {
-                                    self.add_relationship("fh -> fh (ltv -> wtv)", 0.9, loser_triple_value, winner_triple_value);
+                                    self.add_relationship("fh -> fh (ltv -> wtv)", gs.round_num, 0.9, loser_triple_value, winner_triple_value);
                                 } else {
-                                    self.add_relationship("fh -> fh (lpv -> wpv)", 0.9, loser_pair_value, winner_pair_value);
+                                    self.add_relationship("fh -> fh (lpv -> wpv)", gs.round_num, 0.9, loser_pair_value, winner_pair_value);
                                 }
                             },
                             (_, _) => {}
@@ -271,14 +271,14 @@ impl PokerBot for TourneyV1Bot {
                     if my_delta != 0 {
                         for winning_card in winner_hand.into_iter() {
                             for losing_card in loser_hand.into_iter() {
-                                // self.add_relationship("hc -> hc", 0.25, losing_card.value(), winning_card.value());
-                                self.add_relationship("hc -> hc", 0.25, losing_card.value(), winning_card.value());
+                                // self.add_relationship("hc -> hc", gs.round_num, 0.25, losing_card.value(), winning_card.value());
+                                self.add_relationship("hc -> hc", gs.round_num, 0.25, losing_card.value(), winning_card.value());
                             }
                         }
                     } else { // In case of a draw, the high card is a board card, but this is very unlikely
                         let high_card = showdown_engine.highest_card(board_cards);
                         for card in winner_hand.into_iter().chain(loser_hand.into_iter()) {
-                            self.add_relationship("(draw) hc -> hc", my_delta.signum() as f64 * 0.1, card.value(), high_card.value())
+                            self.add_relationship("(draw) hc -> hc", gs.round_num, my_delta.signum() as f64 * 0.1, card.value(), high_card.value())
                         }
                     }
                 }
@@ -305,6 +305,10 @@ impl PokerBot for TourneyV1Bot {
 
         if continue_cost > 1 && self.opponent_raise_count < gs.round_num {
             self.opponent_raise_count += 1;
+        }
+
+        if gs.round_num % 100 == 0 {
+            self.debug_print(format!("Running Guess {:?}", self.running_guess), 1.0);
         }
 
         let order_confidence = 1.0 - (self.relations().possibilities() as f64 / 6227020800.0);
@@ -383,7 +387,7 @@ impl PokerBot for TourneyV1Bot {
 
         self.debug_print(format!("Raise worth: {}", raise), 0.5);
 
-        let raise = raise as u64;
+        let raise = raise as u32;
 
         let act = |fail_action| if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
             Action::Check
@@ -394,12 +398,12 @@ impl PokerBot for TourneyV1Bot {
         if raise > continue_cost {
             // Bound the raise
             let [rb_min, rb_max] = rs.raise_bounds();
-            let raise = if (raise as u64) > rb_max {
+            let raise = if (raise as u32) > rb_max {
                 rb_max
-            } else if (raise as u64) < rb_min {
+            } else if (raise as u32) < rb_min {
                 rb_min
             } else {
-                raise as u64
+                raise as u32
             };
 
             // We think this hand is worth it!

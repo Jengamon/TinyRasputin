@@ -6,9 +6,9 @@ TinyRasputin is a poker playing bot meant for MIT Pokerbots 2020, so it is expli
 Our project uses "Just" to build, so it is relatively simple to understand.
 To use the project, you just need to understand 2 of the build targets:
 
-- mode={debug|release} build-environment
-- mode={debug|release} package
-- mode={debug|release} package-run
+- package-mode={debug|release} build-environment
+- package-mode={debug|release} package
+- run-mode={debug|release} run
 
 You have to run the commands in that order and with the same mode.
 

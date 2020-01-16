@@ -4,6 +4,8 @@ pub struct Guess {
     guess: [f32;13],
 }
 
+const SCALE_CONST: f32 = 3.0;
+
 impl Guess {
     fn index(val: CardValue) -> usize {
         match val {
@@ -23,14 +25,25 @@ impl Guess {
         }
     }
 
-    pub fn update(&mut self, card1: CardValue, card2: CardValue, update_value: f32) {
+    fn clamp(val: f32) -> f32 {
+        if val > 13.0 {
+            13.0
+        } else if val < 1.0 {
+            1.0
+        } else {
+            val
+        }
+    }
+
+    pub fn update(&mut self, card1: CardValue, card2: CardValue, round: u32, update_value: f32) {
         let index1 = Guess::index(card1);
         let index2 = Guess::index(card2);
-        if self.guess[index1] > 1.0 {
-            self.guess[index1] -= update_value
-        }
-        if self.guess[index2] < 13.0 {
-            self.guess[index2] += update_value
+        if card1 != card2 && round > 200 {
+            self.guess[index1] = Guess::clamp(self.guess[index1] - update_value * ((self.guess[index2] - self.guess[index2]).abs() + round as f32 / 1000.0) / (13.0 * SCALE_CONST));
+            self.guess[index2] = Guess::clamp(self.guess[index2] + update_value * ((self.guess[index1] - self.guess[index2]).abs() + round as f32 / 1000.0) / (13.0 * SCALE_CONST));
+        } else {
+            self.guess[index1] = Guess::clamp(self.guess[index1] - update_value);
+            self.guess[index2] = Guess::clamp(self.guess[index2] + update_value);
         }
     }
 

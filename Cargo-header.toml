@@ -12,3 +12,9 @@ bitflags = "^1.2"
 rand = "^0.7"
 itertools = "^0.8"
 approx = "^0.3"
+
+[profile.release]
+codegen-units = 16
+# panic = 'abort'
+opt-level = 2 # Compiling in time is more optimal than optimizing
+incremental = true

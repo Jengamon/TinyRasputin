@@ -82,7 +82,7 @@ impl PokerBot for Lesson2Bot {
             let mut rng = rand::thread_rng();
             let pot_total = my_contrib + opp_contrib;
             let p = (continue_cost as f64) / (pot_total as f64 + continue_cost as f64);
-            let mut bet_amount = (0.75 * pot_total as f64) as u64;
+            let mut bet_amount = (0.75 * pot_total as f64) as u32;
             if bet_amount < min_raise {
                 bet_amount = min_raise;
             } else if bet_amount > max_raise {

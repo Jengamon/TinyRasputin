@@ -4,17 +4,17 @@ use super::{
 };
 use std::cmp::{min, max};
 
-pub const NUM_ROUNDS: u64 = 1000;
-pub const STARTING_STACK: u64 = 200;
-pub const BIG_BLIND: u64 = 2;
-pub const SMALL_BLIND: u64 = 1;
+pub const NUM_ROUNDS: u32 = 1000;
+pub const STARTING_STACK: u32 = 200;
+pub const BIG_BLIND: u32 = 2;
+pub const SMALL_BLIND: u32 = 1;
 
 /// Encodes overall game progress
 #[derive(Debug, Clone, Copy)]
 pub struct GameState {
     pub bankroll: i64,
-    pub game_clock: f64,
-    pub round_num: i64
+    pub game_clock: f32,
+    pub round_num: u32
 }
 
 /// Final state of a poker round corresponding to payoffs
@@ -29,8 +29,8 @@ pub struct TerminalState {
 pub struct RoundState {
     pub button: u32,
     pub street: u32,
-    pub pips: [u64; 2],
-    pub stacks: [u64; 2],
+    pub pips: [u32; 2],
+    pub stacks: [u32; 2],
     pub hands: [Option<CardHand>; 2],
     pub deck: CardDeck,
     pub previous: Option<Box<RoundState>>,
@@ -67,9 +67,9 @@ impl RoundState {
     }
 
     /// Returns an array of the minimum and maximum legal raises
-    pub fn raise_bounds(&self) -> [u64; 2] {
+    pub fn raise_bounds(&self) -> [u32; 2] {
         let active: usize = self.button as usize % 2;
-        let continue_cost: u64 = self.pips[1 - active] - self.pips[active];
+        let continue_cost: u32 = self.pips[1 - active] - self.pips[active];
         let max_contrib = min(self.stacks[active], self.stacks[1-active] + continue_cost);
         let min_contrib = min(max_contrib, continue_cost + max(continue_cost, BIG_BLIND));
         [self.pips[active] + min_contrib, self.pips[active] + max_contrib]

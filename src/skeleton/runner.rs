@@ -86,7 +86,7 @@ impl<'a> Runner<'a> {
                     // Set game clock
                     'T' => game_state = GameState {
                         bankroll: game_state.bankroll,
-                        game_clock: arg.parse::<f64>().expect("Expected a float for game time"),
+                        game_clock: arg.parse::<f32>().expect("Expected a float for game time"),
                         round_num: game_state.round_num
                     },
                     // Set player index (also referred to as "active")
@@ -148,7 +148,7 @@ impl<'a> Runner<'a> {
                     },
                     // A raise action
                     'R' => if let Some(rs) = round_state.clone() {
-                        match rs.proceed(Action::Raise(arg.parse::<u64>().expect("Expected a positive integer for raise number"))) {
+                        match rs.proceed(Action::Raise(arg.parse::<u32>().expect("Expected a positive integer for raise number"))) {
                             StateResult::Round(r) => round_state = Some(r),
                             StateResult::Terminal(t) => {
                                 terminal_state = Some(t);
