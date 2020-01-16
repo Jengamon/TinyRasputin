@@ -9,7 +9,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v1
+    - name: Setup
+      run: cargo install just && just env
     - name: Build
-      run: cargo install just && just env && just package-build
+      run: just package-build
     - name: Run tests
-      run: cargo install just && just env && just package-test
+      run: just package-test
