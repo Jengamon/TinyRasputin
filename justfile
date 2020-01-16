@@ -1,52 +1,24 @@
 python := "python"
 build-dir := "build"
 mode := "debug"
-package_targets := "PACKAGE_TARGETS_" + mode
+package-targets := "PACKAGE_TARGETS_" + mode
+package-contents := "vendor .cargo/config Cargo.* commands.json justfile .package-list src " + env_var(package-targets)
 
 export RUST_BACKTRACE := "1"
 
 alias rebuild := rebuild-environment
 alias clean := clean-environment
 alias env := build-environment
+alias build := package-build
+alias run := package-run
 
 # Runs tinyrasputin in a certain mode
 package-run +FLAGS='': (package-build)
-    #!/usr/bin/env sh
-    cd {{build-dir}}/{{mode}}
-    if [ "{{mode}}" = "release" ]; then
-        cargo run --offline --frozen --release -q -- {{FLAGS}}
-    else
-        cargo run --offline --frozen -- {{FLAGS}}
-    fi
+    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile run {{FLAGS}}
 
 # Builds tinyrasputin in a certain mode
-package-build: (_build-dir-exists) (_copy-files)
-    #!/usr/bin/env sh
-    cd {{build-dir}}/{{mode}}
-    echo 'Building on {{arch()}}:{{os()}}'
-    if [ "{{mode}}" = "release" ]; then
-        cargo build --offline --frozen -q --release
-    else
-        cargo build --offline --frozen
-    fi
-
-# Run using a specified local mode (can only be called on built packages)
-run +FLAGS='': (build)
-    #!/usr/bin/env sh
-    if [ "{{mode}}" = "release" ]; then
-        cargo run --offline --frozen --release -q -- {{FLAGS}}
-    else
-        cargo run --offline --frozen -- {{FLAGS}}
-    fi
-
-# Build using specified local mode (can only be called on built packages)
-build: (_package-complete)
-    #!/usr/bin/env sh
-    if [ "{{mode}}" = "release" ]; then
-        cargo build --offline --frozen -q --release
-    else
-        cargo build --offline --frozen
-    fi
+package-build: (_build-dir-exists) (_copy-files) (_generate-package-listing)
+    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile build
 
 _make-build-dir: 
     mkdir -p {{build-dir}}/{{mode}}
@@ -56,13 +28,14 @@ _make-build-dir:
     test -d {{build-dir}}/{{mode}}
 
 _copy-files: (_build-dir-exists) (_copy_base_files)
-    @if [ ! -z {{env_var(package_targets)}} ]; then \
+    @if [ ! -z {{env_var(package-targets)}} ]; then \
         echo 'Copying over extra target files for {{mode}} build'; \
-        cp -r -t {{build-dir}}/{{mode}} {{env_var(package_targets)}}; \
+        cp -r -t {{build-dir}}/{{mode}} {{env_var(package-targets)}}; \
     fi
 
 _copy_base_files: (_build-dir-exists)
-    cp -rt {{build-dir}}/{{mode}} src justfile .env
+    cp -rt {{build-dir}}/{{mode}} src
+    cp package-justfile {{build-dir}}/{{mode}}/justfile
     @echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired mode
@@ -77,22 +50,9 @@ _clean-package:
 _clean-vendor:
     rm -rf {{build-dir}}/{{mode}}/vendor
 
-# Checks if a package is theoretically complete
-@_package-complete:
-    test -d vendor
-    test -f .cargo/config
-    test -f Cargo.toml
-    test -f Cargo.lock
-    test -f commands.json
-    if [ {{mode}} = "debug" ]; then \
-        echo 'Base package coherent, checking for extra files...'; \
-    fi
-    for file in {{env_var(package_targets)}}; do \
-        if [ {{mode}} = "debug" ]; then \
-            echo Checking for $file...; \
-        fi; \
-        test -e "./$file"; \
-    done
+_generate-package-listing: (_build-dir-exists) (_copy-files)
+    rm -rf {{build-dir}}/{{mode}}/.package-list
+    cd {{build-dir}}/{{mode}} && find {{package-contents}} -type f -print > .package-list
 
 # Erase build artifacts for a selected mode
 clean-environment:
@@ -104,20 +64,18 @@ clean-all:
 
 # Build the build directory for a certain mode
 build-environment: (_select-cargo) (_clean-vendor)
-    #!/usr/bin/env sh
     rm -rf {{build-dir}}/{{mode}}/.cargo
     mkdir {{build-dir}}/{{mode}}/.cargo
-    cd {{build-dir}}/{{mode}}
-    cargo update
-    cargo vendor vendor > .cargo/config
+    cd {{build-dir}}/{{mode}} && cargo update
+    cd {{build-dir}}/{{mode}} && cargo vendor vendor > .cargo/config
 
 _create_command_json +FLAGS='':
     sed -e "s/MODE/{{mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run mode
-package +FLAGS='': (_clean-package) (package-build) (_create_command_json FLAGS)
-    echo 'Packing tinyrasputin-{{mode}}.zip...'
-    cd {{build-dir}}/{{mode}} && 7z a -r ../../tinyrasputin-{{mode}}.zip `echo ".cargo justfile src Cargo.* commands.json .env vendor {{env_var(package_targets)}}"`
+package +FLAGS='': (_clean-package) (package-build) (_create_command_json FLAGS) (_generate-package-listing)
+    @echo 'Packing tinyrasputin-{{mode}}.zip...'
+    cd {{build-dir}}/{{mode}} && 7z a -r ../../tinyrasputin-{{mode}}.zip {{package-contents}}
 
 # Build the environment then repackage
 rebuild-environment: (build-environment) (package)

@@ -1,15 +1,7 @@
 /target
 **/*.rs.bk
-/vendor*
-/.cargo
-/test
-nul
 *.dot
 *.txt
 *.zip
 *.png
-commands.json
-/.cargo
-vendor*
-Cargo.*
 build

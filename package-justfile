@@ -1,0 +1,29 @@
+python := "python"
+build-dir := "build"
+mode := "debug"
+
+# Run using a specified local mode (can only be called on built packages)
+run +FLAGS='': (build)
+    #!/usr/bin/env sh
+    if [ "{{mode}}" = "release" ]; then
+        cargo run --offline --frozen --release -q -- {{FLAGS}} || true
+    else
+        cargo run --offline --frozen -- {{FLAGS}} || true
+    fi
+
+# Build using specified local mode (can only be called on built packages)
+build: (_package-complete)
+    #!/usr/bin/env sh
+    if [ "{{mode}}" = "release" ]; then
+        cargo build --offline --frozen -q --release || true
+    else
+        cargo build --offline --frozen || true
+    fi
+
+@_package-listing-exists:
+    test -f .package-list
+
+# Checks if a package is theoretically complete using a generated listing
+@_package-complete: (_package-listing-exists)
+    while read -r line; do test -f $line; done < .package-list
+    
