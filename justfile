@@ -3,7 +3,7 @@ build-dir := "build"
 mode := "debug"
 package-targets := "PACKAGE_TARGETS_" + mode
 base-package := "src " + env_var(package-targets)
-package-contents := "vendor .cargo/config Cargo.* .package-list justfile " + base-package
+package-contents := "vendor .cargo/config Cargo.* commands.json .package-list justfile " + base-package
 
 export RUST_BACKTRACE := "1"
 
