@@ -54,7 +54,7 @@ _clean-package:
 _clean-vendor:
     rm -rf {{build-dir}}/{{mode}}/vendor
 
-_generate-package-listing: (_vendor-exists) (_copy-files) 
+_generate-package-listing: (_vendor-exists) (_copy-files) (_create-command-json)
     rm -rf {{build-dir}}/{{mode}}/.package-list
     cd {{build-dir}}/{{mode}} && find {{package-contents}} -type f -print > .package-list
 
@@ -73,11 +73,11 @@ build-environment: (_select-cargo) (_clean-vendor)
     cd {{build-dir}}/{{mode}} && cargo update
     cd {{build-dir}}/{{mode}} && cargo vendor vendor > .cargo/config
 
-_create_command_json +FLAGS='':
+_create-command-json +FLAGS='':
     sed -e "s/MODE/{{mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run mode
-package +FLAGS='': (_clean-package) (package-build) (_create_command_json FLAGS) (_generate-package-listing)
+package +FLAGS='': (_clean-package) (_create-command-json FLAGS) (package-build) (_generate-package-listing)
     @echo 'Packing tinyrasputin-{{mode}}.zip...'
     cd {{build-dir}}/{{mode}} && 7z a -r ../../tinyrasputin-{{mode}}.zip {{package-contents}}
 
