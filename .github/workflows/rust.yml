@@ -20,6 +20,10 @@ jobs:
       with:
         path: ~/.cargo/bin
         key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/*') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-bin-${{ env.cache-name }}-
+          ${{ runner.os }}-cargo-bin-
+          ${{ runner.os }}-
     - name: Install just
       if: steps.cache.outputs.cache-hit != 'true'
       run: cargo install just
@@ -48,6 +52,10 @@ jobs:
       with:
         path: ~/.cargo/bin
         key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/*') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-bin-${{ env.cache-name }}-
+          ${{ runner.os }}-cargo-bin-
+          ${{ runner.os }}-
     - name: Install just
       if: steps.cache.outputs.cache-hit != 'true'
       run: cargo install just
