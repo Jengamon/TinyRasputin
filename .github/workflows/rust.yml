@@ -9,23 +9,66 @@ on:
       - master
 
 jobs:
+  build-latest-just-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          repository: 'casey/just'
+      - name: Cache built executable
+        uses: actions/cache@v1.1.0
+        id: cache
+        with:
+          path: target
+          key: ${{ runner.os }}-exe-${{ hashFiles('**') }}
+          restore-keys: |
+            ${{ runner.os }}-exe-
+            ${{ runner.os }}-
+      - name: Build just
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo build --release
+      - name: Upload built artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: linux-just
+          path: target/release/just
+
+  build-latest-just-windows:
+    runs-on: window-latest
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          repository: 'casey/just'
+      - name: Cache built executable
+        uses: actions/cache@v1.1.0
+        id: cache
+        with:
+          path: target
+          key: ${{ runner.os }}-exe-${{ hashFiles('**') }}
+          restore-keys: |
+            ${{ runner.os }}-exe-
+            ${{ runner.os }}-
+      - name: Build just
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo build --release
+      - name: Upload built artifact
+        uses: actions/upload-artifact@v1
+        with:
+          name: windows-just
+          path: target/release/just.exe
+
   build-linux:
     runs-on: ubuntu-latest
+    needs: build-latest-just-linux
 
     steps:
     - uses: actions/checkout@v2
-    - name: Cache cargo bin
-      uses: actions/cache@v1.1.0
-      id: cache
+    - name: Download Just executable
+      uses: actions/download-artifact@v1
       with:
-        path: ~/.cargo/bin
-        key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/*') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-bin-
-          ${{ runner.os }}-
-    - name: Install just
-      if: steps.cache.outputs.cache-hit == 'false'
-      run: cargo install just
+        name: linux-just
+    - name: Add just to PATH
+      run: "export PATH=$PATH:~/linux-just"
     - name: Setup environment
       run: just env && just mode=release env
     - name: Build
@@ -42,21 +85,17 @@ jobs:
   
   build-windows:
     runs-on: windows-latest
+    need: build-latest-just-windows
 
     steps:
     - uses: actions/checkout@v2
-    - name: Cache cargo bin
-      uses: actions/cache@v1.1.0
-      id: cache
+    - name: Download Just executable
+      uses: actions/download-artifact@v1
       with:
-        path: ~/.cargo/bin
-        key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/*') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-bin-
-          ${{ runner.os }}-
-    - name: Install just
-      if: steps.cache.outputs.cache-hit == 'false'
-      run: cargo install just
+        name: windows-just
+    - name: Add just to PATH
+      shell: bash
+      run: "export PATH=$PATH:~/windows-just"
     - name: Setup environment
       shell: bash
       run: just env && just mode=release env
