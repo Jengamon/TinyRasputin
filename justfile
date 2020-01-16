@@ -29,10 +29,10 @@ _make-build-dir:
     mkdir -p {{build-dir}}/{{mode}}
     echo "Created environment for {{mode}} build."
 
-@_build-dir-exists:
+_build-dir-exists:
     test -d {{build-dir}}/{{mode}}
 
-@_vendor-exists: (_build-dir-exists)
+_vendor-exists: (_build-dir-exists)
     test -d {{build-dir}}/{{mode}}/vendor
 
 _copy-files: (_build-dir-exists) (_copy-justfile)
@@ -84,7 +84,7 @@ package +FLAGS='': (_clean-package) (_create-command-json FLAGS) (package-build)
 # Build the environment then repackage
 rebuild-environment: (build-environment) (package)
 
-@_package-exists:
+_package-exists:
     test -f tinyrasputin-{{mode}}.zip
 
 _create-test-directory: (_package-exists)
