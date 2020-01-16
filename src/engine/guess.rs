@@ -33,6 +33,12 @@ impl Guess {
             self.guess[index2] += update_value
         }
     }
+
+    pub fn predicted_value(&self, card: CardValue) -> f32 {
+        let index = Guess::index(card);
+        self.guess[index]
+    }
+
     pub fn new () -> Guess {
         Guess {
             guess: [7.0; 13]

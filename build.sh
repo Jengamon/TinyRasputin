@@ -1,1 +1,0 @@
-CARGO_INCREMENTAL=1 cargo build --offline --frozen --release --lib

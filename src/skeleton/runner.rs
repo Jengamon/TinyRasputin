@@ -5,10 +5,11 @@ use super::actions::{Action, ActionType};
 use super::states::{SMALL_BLIND, BIG_BLIND, STARTING_STACK, GameState, RoundState, TerminalState, StateResult};
 use super::cards::{Card, CardHand, CardDeck};
 use std::time::{Duration};
+use crate::debug_println;
 
 const CONNECT_TIMEOUT: u64 = 10;
-const READ_TIMEOUT: u64 = 10;
-const WRITE_TIMEOUT: u64 = 1;
+// const READ_TIMEOUT: u64 = 10;
+// const WRITE_TIMEOUT: u64 = 1;
 
 pub struct Runner<'a> {
     stream: BufReader<TcpStream>,
@@ -21,8 +22,8 @@ impl<'a> Runner<'a> {
         if let Some(addr) = addr.to_socket_addrs()?.nth(0) {
             let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(CONNECT_TIMEOUT))?;
             stream.set_nodelay(true).expect("set_nodelay call failed");
-            stream.set_read_timeout(Some(Duration::from_secs(READ_TIMEOUT))).expect("read_timeout call failed");
-            stream.set_write_timeout(Some(Duration::from_secs(WRITE_TIMEOUT))).expect("write_timeout call failed");
+            // stream.set_read_timeout(Some(Duration::from_secs(READ_TIMEOUT))).expect("read_timeout call failed");
+            // stream.set_write_timeout(Some(Duration::from_secs(WRITE_TIMEOUT))).expect("write_timeout call failed");
             // stream.set_nonblocking(true).expect("set_nonblocking call failed");
             let mut runner = Runner {
                 stream: BufReader::new(stream),
@@ -38,7 +39,7 @@ impl<'a> Runner<'a> {
     pub fn receive(&mut self) -> std::io::Result<Vec<String>> {
         // Check stream for errors. If there is one, disconnect.
         if let Some(error) = self.stream.get_ref().take_error()? {
-            println!("[SkelyBoi] Disconnecting because of stream error {}", error);
+            debug_println!("[SkelyBoi] Disconnecting because of stream error {}", error);
             return Err(error)
         }
 
@@ -51,7 +52,7 @@ impl<'a> Runner<'a> {
     pub fn send(&mut self, act: Action) -> std::io::Result<()> {
         // Check stream for errors. If there is one, disconnect.
         if let Some(error) = self.stream.get_ref().take_error()? {
-            println!("[SkelyBoi] Disconnecting because of stream error {}", error);
+            debug_println!("[SkelyBoi] Disconnecting because of stream error {}", error);
             return Err(error)
         }
 
@@ -80,7 +81,7 @@ impl<'a> Runner<'a> {
             for clause in self.receive()? {
                 let chr = clause.chars().nth(0).unwrap();
                 let arg = clause.chars().skip(1).collect::<String>();
-                // println!("[SkelyBoi] Received {}", clause);
+                // debug_println!("[SkelyBoi] Received {}", clause);
                 match chr {
                     // Set game clock
                     'T' => game_state = GameState {
@@ -147,7 +148,7 @@ impl<'a> Runner<'a> {
                     },
                     // A raise action
                     'R' => if let Some(rs) = round_state.clone() {
-                        match rs.proceed(Action::Raise(arg.parse::<i64>().expect("Expected an integer for raise number"))) {
+                        match rs.proceed(Action::Raise(arg.parse::<u64>().expect("Expected a positive integer for raise number"))) {
                             StateResult::Round(r) => round_state = Some(r),
                             StateResult::Terminal(t) => {
                                 terminal_state = Some(t);
@@ -235,8 +236,17 @@ impl<'a> Runner<'a> {
                 let legal_actions = round_state.legal_actions();
                 // Coerce the action to the next best action
                 let action = match bot_action {
-                    Action::Raise(raise) => if(legal_actions & ActionType::RAISE) == ActionType::RAISE {
-                        Action::Raise(raise)
+                    Action::Raise(raise) => if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
+                        let [rb_min, rb_max] = round_state.raise_bounds();
+                        if raise > rb_min && raise < rb_max {
+                            Action::Raise(raise)
+                        } else {
+                            if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                Action::Check
+                            } else {
+                                Action::Call
+                            }
+                        }
                     } else {
                         if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
                             Action::Check
@@ -261,7 +271,7 @@ impl<'a> Runner<'a> {
                     }
                 };
                 if bot_action != action {
-                    println!("[SkelyBoi] Coerced {:?} into {:?}", bot_action, action);
+                    debug_println!("[SkelyBoi] Coerced {:?} into {:?}", bot_action, action);
                 }
                 self.send(action)?
             } else {

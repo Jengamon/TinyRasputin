@@ -1,0 +1,4 @@
+{
+    "build": ["just", "build", "MODE"],
+    "run": ["just", "run", "MODE", "bot"]
+}

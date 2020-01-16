@@ -12,11 +12,11 @@ bitflags! {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Action {
-    Fold, Call, Check, Raise(i64)
+    Fold, Call, Check, Raise(u64)
 }
 
 impl Action {
-    pub fn amount(&self) -> i64 {
+    pub fn amount(&self) -> u64 {
         match self {
             Action::Fold => 0,
             Action::Call => 0,
