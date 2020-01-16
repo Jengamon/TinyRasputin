@@ -48,22 +48,22 @@ build: (_package-complete)
         cargo build --offline --frozen
     fi
 
-@_make-build-dir: 
+_make-build-dir: 
     mkdir -p {{build-dir}}/{{mode}}
     echo "Created environment for {{mode}} build."
 
-@_build-dir-exists:
+_build-dir-exists:
     test -d {{build-dir}}/{{mode}}
 
-@_copy-files: (_build-dir-exists) (_copy_base_files)
-    if [ ! -z {{env_var(package_targets)}} ]; then \
+_copy-files: (_build-dir-exists) (_copy_base_files)
+    @if [ ! -z {{env_var(package_targets)}} ]; then \
         echo 'Copying over extra target files for {{mode}} build'; \
         cp -r -t {{build-dir}}/{{mode}} {{env_var(package_targets)}}; \
     fi
 
-@_copy_base_files: (_build-dir-exists)
+_copy_base_files: (_build-dir-exists)
     cp -rt {{build-dir}}/{{mode}} src justfile .env
-    echo 'Renewed basic build environment for {{mode}} build'
+    @echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired mode
 @_select-cargo: (clean-environment)  (_make-build-dir) (_copy_base_files) (_copy-files)
@@ -111,7 +111,7 @@ build-environment: (_select-cargo) (_clean-vendor)
     cargo update
     cargo vendor vendor > .cargo/config
 
-@_create_command_json +FLAGS='':
+_create_command_json +FLAGS='':
     sed -e "s/MODE/{{mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run mode
