@@ -94,9 +94,11 @@ jobs:
         path: "just"
     - name: Add just to PATH
       run: echo "::add-path::just"
+    - name: Make just executable
+      run: chmod +x just/just
     - name: Test if just is on the PATH
       shell: bash
-      run: echo $PATH && just
+      run: echo $PATH && just --list
     - name: Setup environment
       run: just env && just mode=release env
     - name: Build
@@ -126,7 +128,7 @@ jobs:
       run: echo "::add-path::just"
     - name: Test if just is on the PATH
       shell: bash
-      run: echo $PATH && just
+      run: echo $PATH && just --list
     - name: Setup environment
       shell: bash
       run: just env && just mode=release env
