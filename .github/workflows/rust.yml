@@ -93,21 +93,25 @@ jobs:
         name: linux-just
         path: "just"
     - name: Add just to PATH
-      run: echo "::add-path::just"
+      run: echo "::add-path::$(pwd)/just"
     - name: Make just executable
       run: chmod +x just/just
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just --list
     - name: Setup environment
-      shell: bash
-      run: just env
+      run: just env && just mode=release env
     - name: Build
-      shell: bash
-      run: cd build/debug/ && just build
+      run: just package-build
     - name: Run tests
-      shell: bash
-      run: cd build/debug/ && just test
+      run: just package-test
+    - name: Build release package
+      run: just mode=release package
+    - name: Upload release package
+      uses: actions/upload-artifact@v1
+      with:
+        name: linux-release-build
+        path: tinyrasputin-release.zip
   
   build-windows:
     runs-on: windows-latest
@@ -121,7 +125,7 @@ jobs:
         name: windows-just
         path: "just"
     - name: Add just to PATH
-      run: echo "::add-path::just"
+      run: echo "::add-path::$(pwd)/just"
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just --list
