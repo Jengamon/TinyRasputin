@@ -93,7 +93,7 @@ jobs:
         name: linux-just
         path: "linux-just"
     - name: Add just to PATH
-      run: "export PATH=$PATH:$(pwd)/linux-just"
+      run: echo "::add-path::linux-just"
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just
@@ -123,8 +123,7 @@ jobs:
         name: windows-just
         path: "windows-just"
     - name: Add just to PATH
-      shell: bash
-      run: "export PATH=$PATH:$(pwd)/windows-just"
+      run: echo "::add-path::linux-just"
     - name: Test if just is on the PATH
       shell: bash
       run: echo $PATH && just
