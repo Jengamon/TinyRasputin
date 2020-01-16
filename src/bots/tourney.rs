@@ -13,6 +13,7 @@ use tinyrasputin::{
     },
     skeleton::cards::Card,
 };
+
 use std::cmp::Ordering;
 use rand::prelude::*;
 use itertools::Itertools;
