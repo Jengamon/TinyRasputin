@@ -100,13 +100,13 @@ jobs:
       shell: bash
       run: echo $PATH && just --list
     - name: Setup environment
-      run: just env && just mode=release env
+      run: just env && just package-mode=release env
     - name: Build
       run: just package-build
     - name: Run tests
       run: just package-test
     - name: Build release package
-      run: just mode=release package
+      run: just package-mode=release package
     - name: Upload release package
       uses: actions/upload-artifact@v1
       with:
@@ -131,7 +131,7 @@ jobs:
       run: echo $PATH && just --list
     - name: Setup environment
       shell: bash
-      run: just env && just mode=release env
+      run: just env && just package-mode=release env
     - name: Build
       shell: bash
       run: just package-build
@@ -140,7 +140,7 @@ jobs:
       run: just package-test
     - name: Build release package
       shell: bash
-      run: just mode=release package
+      run: just package-mode=release package
     - name: Upload release package
       uses: actions/upload-artifact@v1
       with:
