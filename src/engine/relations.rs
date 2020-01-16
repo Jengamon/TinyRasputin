@@ -64,7 +64,7 @@ pub fn detect_cycles(relations: &[(CardValue, CardValue)]) -> Vec<Vec<CardValue>
                         // Keep only the longest cycles
                         cycles = cycles.into_iter().fold(vec![], |candidates, cycle| {
                             // We know a longer cycle
-                            if candidates.iter().any(|x| x.iter().all(|x| cycle.contains(&x))) {
+                            if candidates.iter().any(|x| x.iter().all(|x| cycle.contains(&x)) && x.len() > cycle.len()) {
                                 candidates
                             } else {
                                 // We are the longest chain of our loop
@@ -111,23 +111,20 @@ impl RelationsExt for [(CardValue, CardValue)] {
     fn possibilities(&self) -> u64 {
         assert!(detect_cycles(self).len() == 0);
         let ordering = into_ordering!("2,3,4,5,6,7,8,9,T,J,Q,K,A");
-        (0..ordering.len()).into_iter().fold((1, vec![]), |(count, mut seen), card| {
+        ordering.iter().fold((1, vec![]), |(count, mut seen), cv| {
             // We don't know the relative ordering of these relationships, so just always count them
             let possible: Vec<_> = ordering.iter().filter(|value| {
                 let (mut pre, mut post, _) = relationships(&self, value);
                 pre.all(|x| seen.contains(&x)) && post.all(|x| !seen.contains(&x))
             }).cloned().collect();
-            for value in &possible {
-                if !seen.contains(value) {
-                    seen.push(*value);
-                }
-            }
-            let value = possible.len().saturating_sub(card);
+            let value = possible.len().saturating_sub(seen.len());
+            // debug_println!("Possible Len: {} ({})", possible.len(), seen.len());
             let value = if value > 0 {
                 value
             } else {
-                1 // The number of probabilities here is exactly 1
+                1
             };
+            seen.push(*cv);
             (count * value as u64, seen)
         }).0
     }
@@ -243,7 +240,7 @@ pub fn cycles_test() {
         let intersection: Vec<_> = goals.iter().filter(|x| detected.contains(x)).cloned().collect();
         let failed: Vec<_> = goals.iter().filter(|x| !detected.contains(x)).cloned().collect();
         let extra: Vec<_> = detected.iter().filter(|x| !goals.contains(x)).cloned().collect();
-        assert_eq!(failed, vec![], "Failed goals detected: {}", extra.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
+        assert_eq!(failed, vec![], "Failed goals detected: {}", failed.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
         assert_eq!(extra, vec![], "Extra cycles detected: {}", extra.iter().map(|x| format!("[{}]", x.iter().format(", "))).format(", "));
         assert_eq!(*intersection, *goals);
     }

@@ -2,7 +2,8 @@ python := "python"
 build-dir := "build"
 mode := "debug"
 package-targets := "PACKAGE_TARGETS_" + mode
-package-contents := "vendor .cargo/config Cargo.* commands.json justfile .package-list src " + env_var(package-targets)
+base-package := "src " + env_var(package-targets)
+package-contents := "vendor .cargo/config Cargo.* .package-list justfile " + base-package
 
 export RUST_BACKTRACE := "1"
 
@@ -11,6 +12,7 @@ alias clean := clean-environment
 alias env := build-environment
 alias build := package-build
 alias run := package-run
+alias test := package-test
 
 # Runs tinyrasputin in a certain mode
 package-run +FLAGS='': (package-build)
@@ -20,6 +22,9 @@ package-run +FLAGS='': (package-build)
 package-build: (_build-dir-exists) (_copy-files) (_generate-package-listing)
     cd {{build-dir}}/{{mode}} && just -d . --justfile justfile build
 
+package-test +FLAGS='': (package-build)
+    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile test {{FLAGS}}
+
 _make-build-dir: 
     mkdir -p {{build-dir}}/{{mode}}
     echo "Created environment for {{mode}} build."
@@ -27,19 +32,18 @@ _make-build-dir:
 @_build-dir-exists:
     test -d {{build-dir}}/{{mode}}
 
-_copy-files: (_build-dir-exists) (_copy_base_files)
-    @if [ ! -z {{env_var(package-targets)}} ]; then \
-        echo 'Copying over extra target files for {{mode}} build'; \
-        cp -r -t {{build-dir}}/{{mode}} {{env_var(package-targets)}}; \
-    fi
+@_vendor-exists: (_build-dir-exists)
+    test -d {{build-dir}}/{{mode}}/vendor
 
-_copy_base_files: (_build-dir-exists)
-    cp -rt {{build-dir}}/{{mode}} src
+_copy-files: (_build-dir-exists) (_copy-justfile)
+    cp -rt {{build-dir}}/{{mode}} {{base-package}}
+
+_copy-justfile: (_build-dir-exists)
     cp package-justfile {{build-dir}}/{{mode}}/justfile
     @echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired mode
-_select-cargo: (clean-environment)  (_make-build-dir) (_copy_base_files) (_copy-files)
+_select-cargo: (clean-environment) (_make-build-dir) (_copy-files)
     rm -rf {{build-dir}}/{{mode}}/Cargo.toml
     cat Cargo-header.toml Cargo-{{mode}}.toml  > {{build-dir}}/{{mode}}/Cargo.toml
     @echo "Created Cargo.toml for {{mode}} build."
@@ -50,7 +54,7 @@ _clean-package:
 _clean-vendor:
     rm -rf {{build-dir}}/{{mode}}/vendor
 
-_generate-package-listing: (_build-dir-exists) (_copy-files)
+_generate-package-listing: (_vendor-exists) (_copy-files) 
     rm -rf {{build-dir}}/{{mode}}/.package-list
     cd {{build-dir}}/{{mode}} && find {{package-contents}} -type f -print > .package-list
 
