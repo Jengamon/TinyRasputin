@@ -8,24 +8,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Cache cargo registry
-      uses: actions/cache@v1.1
+    - name: Cache cargo files
+      uses: actions/cache@v1
+      id: cache
       with:
-        path: ~/.cargo/registry
+        path: ~/.cargo
         key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo index
-      uses: actions/cache@v1.1
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-    - name: Cache cargo bin
-      uses: actions/cache@v1.1
-      id: cargo-bin
-      with:
-        path: ~/.cargo/bin
-        key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/Cargo.lock') }}
     - name: Install just
-      if: steps.cargo-bin.output.cache-hit != 'true'
+      if: steps.cache.outputs.cache-hit != 'true'
       run: cargo install just
     - name: Setup environment
       run: just env && just mode=release env
