@@ -67,6 +67,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: linux-just
+        path: "~"
     - name: Add just to PATH
       run: "export PATH=$PATH:~/linux-just"
     - name: Setup environment
@@ -93,6 +94,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: windows-just
+        path: "~"
     - name: Add just to PATH
       shell: bash
       run: "export PATH=$PATH:~/windows-just"
