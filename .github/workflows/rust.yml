@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v1
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFil
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       - name: Build just
         if: steps.cache-build-window.outputs.cache-hit != 'true'
         run: cargo build --release
@@ -78,7 +78,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: linux-just
-        path: "~"
+        path: "~/linux-just"
     - name: Add just to PATH
       run: "export PATH=$PATH:~/linux-just"
     - name: Setup environment
@@ -105,7 +105,7 @@ jobs:
       uses: actions/download-artifact@v1
       with:
         name: windows-just
-        path: "~"
+        path: "~/windows-just"
     - name: Add just to PATH
       shell: bash
       run: "export PATH=$PATH:~/windows-just"
