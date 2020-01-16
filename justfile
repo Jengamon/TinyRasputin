@@ -43,7 +43,7 @@ local-test +FLAGS='': (local-build)
     fi
 
 # Builds tinyrasputin in a certain package-mode
-package-build +FLAGS='': (_select-cargo package-mode) (_copy-files package-mode FLAGS)
+package-build +FLAGS='': (_select-cargo package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode)
     cd {{build-dir}}/{{package-mode}} && just -d . --justfile justfile mode={{run-mode}} build
 
 # Tests tiny rasputin in a certain package-mode as it would run in package package-mode
@@ -57,16 +57,13 @@ _make-build-dir mode:
 _build-dir-exists mode:
     test -d {{build-dir}}/{{mode}}
 
-_vendor-exists mode: (_build-dir-exists mode)
-    test -d {{build-dir}}/{{mode}}/vendor
-
-_copy-files mode +FLAGS="": (_build-dir-exists mode) (_create-command-json mode FLAGS) (_generate-package-listing package-mode)
+_copy-files mode +FLAGS="": (_build-dir-exists mode) (_create-command-json mode FLAGS)
     cp -rt {{build-dir}}/{{mode}} {{base-package}}
     cp package-justfile {{build-dir}}/{{mode}}/justfile
     @echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired package-mode
-_select-cargo mode: (_build-dir-exists mode) (_copy-files mode)
+_select-cargo mode: (_build-dir-exists mode)
     rm -rf {{build-dir}}/{{mode}}/Cargo.toml
     cat Cargo-header.toml Cargo-{{mode}}.toml  > {{build-dir}}/{{mode}}/Cargo.toml
     @echo "Created Cargo.toml for {{mode}} build."
@@ -74,15 +71,12 @@ _select-cargo mode: (_build-dir-exists mode) (_copy-files mode)
 _clean-package mode:
     rm -f tinyrasputin-{{mode}}.zip
 
-_clean-vendor mode:
-    rm -rf {{build-dir}}/{{mode}}/vendor
-
-_generate-package-listing mode: (_vendor-exists mode)
+_generate-package-listing mode: (_copy-files mode)
     rm -rf {{build-dir}}/{{mode}}/.package-list
     cd {{build-dir}}/{{mode}} && find {{package-contents}} -type f -print > .package-list
 
 # Erase build artifacts for a selected package-mode
-clean-environment mode: (_clean-package mode) (_clean-vendor mode)
+clean-environment mode: (_clean-package mode)
     rm -rf {{build-dir}}/{{mode}}
 
 # Erase all build artifacts
@@ -91,7 +85,7 @@ clean-all: (_clean-package "debug") (_clean-package "release")
     rm -rf target
 
 # Build the build directory for a certain package-mode
-build-environment: (clean-environment package-mode) (_make-build-dir package-mode) (_select-cargo package-mode)
+build-environment: (clean-environment package-mode) (_make-build-dir package-mode) (_select-cargo package-mode) (_copy-files package-mode)
     rm -rf {{build-dir}}/{{package-mode}}/.cargo
     mkdir {{build-dir}}/{{package-mode}}/.cargo
     cd {{build-dir}}/{{package-mode}} && cargo update
@@ -101,7 +95,7 @@ _create-command-json mode +FLAGS='': (_build-dir-exists mode)
     sed -e "s/MODE/{{package-mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{package-mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run package-mode
-package +FLAGS='': (_clean-package package-mode) (_copy-files package-mode FLAGS) (package-build FLAGS)
+package +FLAGS='': (_clean-package package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode) (package-build FLAGS)
     @echo 'Packing tinyrasputin-{{package-mode}}.zip...'
     cd {{build-dir}}/{{package-mode}} && 7z a -r ../../tinyrasputin-{{package-mode}}.zip {{package-contents}}
 
