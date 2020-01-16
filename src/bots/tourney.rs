@@ -358,7 +358,7 @@ impl PokerBot for TourneyBot {
             match my_best {
                 PotentialHand::Hand(hand) => { // We already have a hand (which means we have pocket pairs)
                     let max_hand_value = ShowdownEngine::values(hand.cards().into_iter()).into_iter().max_by(|a, b| showdown_engine.value_order(&a, &b)).unwrap();
-                    if self.running_guess.predicted_value(max_hand_value) - 7.0 > 3.0 || rng.gen_bool(0.5 * (1.0 - order_confidence)) {
+                    if self.running_guess.predicted_value(max_hand_value) - 7.0 > 3.0 || rng.gen_bool(0.5 * (1.0 - order_confidence)) && order_confidence > 0.0 {
                         // We are slightly confident this is high
                         rng.gen_range(0.1 * order_confidence as f64, 0.25 * order_confidence as f64) * pot_total as f64
                     } else {

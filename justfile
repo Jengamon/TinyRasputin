@@ -2,7 +2,7 @@ python := "python"
 build-dir := "build"
 export RUST_BACKTRACE := "1"
 
-alias rebuild := rebuild-package
+alias rebuild := rebuild-environment
 
 # Run using a specified local mode (can only be called on built packages)
 run mode +FLAGS='': (build mode)
@@ -52,10 +52,9 @@ package-build mode: (_build-dir-exists mode) (_copy-files mode)
 _copy-files mode: (_build-dir-exists mode) (_copy_base_files mode) (_create_command_json mode)
     #!/usr/bin/env sh
     echo 'Copying over extra target files for {{mode}} build'
-    for target in $PACKAGE_TARGETS_{{mode}}; do
-        echo Copying $target to {{build-dir}}/{{mode}};
-        cp -r $target {{build-dir}}/{{mode}};
-    done
+    if [ ! -z $PACKAGE_TARGETS_{{mode}} ]; then
+        cp -uf -t {{build-dir}}/{{mode}} $PACKAGE_TARGETS_{{mode}};
+    fi
 
 @_copy_base_files mode: (_build-dir-exists mode)
     cp -r src {{build-dir}}/{{mode}}/src
@@ -64,7 +63,7 @@ _copy-files mode: (_build-dir-exists mode) (_copy_base_files mode) (_create_comm
     echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired mode
-@_select-cargo mode: (clean-target mode)  (_make-build-dir mode) (_copy_base_files mode)
+@_select-cargo mode: (clean-target mode)  (_make-build-dir mode) (_copy_base_files mode) (_copy-files mode)
     rm -rf {{build-dir}}/{{mode}}/Cargo.toml
     cat Cargo-header.toml Cargo-{{mode}}.toml  > {{build-dir}}/{{mode}}/Cargo.toml
     echo "Created Cargo.toml for {{mode}} build."
@@ -122,7 +121,8 @@ package mode: (_clean-package mode) (package-build mode)
         7z a -r ../../tinyrasputin-{{mode}}.zip $target > nul;
     done
 
-rebuild-package mode: (build-environment mode) (package mode)
+# Build the environment then repackage
+rebuild-environment mode: (build-environment mode) (package mode)
 
 @_package-exists mode:
     test -f tinyrasputin-{{mode}}.zip
