@@ -136,7 +136,7 @@ fn analyze_mode<P: AsRef<Path>>(_: P) -> std::io::Result<()> {
     panic!("Analyze mode is disabled for release!");
 }
 
-fn main() -> std::io::Result<()> {
+fn program_main() -> std::io::Result<()> {
     // read in arguments
     let matches = App::new("TinyRasputin - A Rust PokerBot")
                     .setting(AppSettings::SubcommandRequiredElseHelp)
@@ -193,4 +193,37 @@ fn main() -> std::io::Result<()> {
     } else {
         unreachable!()
     }
+}
+
+// Right now, the server can't handle a non-zero error code, but our code like to output non-zero error codes
+// when we run into, you know, an unhandled programatic error. Catch those errors and print them, but don't ever return 
+// a non-zero error code on release.
+
+// We don't really care what happens on debug builds, in fact 
+// crashing normally is better, so that we can call destructors.
+#[cfg(debug_assertions)]
+fn main() {
+    program_main().unwrap()
+}
+
+// Make sure that when we hit a programmatic error, we still return 0.
+#[cfg(not(debug_assertions))]
+fn main() {
+    let default_behavior = std::panic::take_hook();
+    
+    // Customize our panic behavior, so we will never exit with a non-zero error code
+    // That is considered more important than cleaning up so oh well
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Handle the error in the default way (with nice printing and stuff)
+        default_behavior(panic_info);
+        // But always return an error code of 0
+        std::process::exit(0);
+        // The things that we *know* that we have left some memory untended
+        // but in the release build that it not out problem.
+        // It is lucky that we can even do this
+        // AAAAAAAGGGHHHHHHH
+        // Please tell me when I can remove this code...
+    }));
+
+    program_main().unwrap()
 }

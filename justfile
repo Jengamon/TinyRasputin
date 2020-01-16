@@ -16,14 +16,14 @@ alias test := package-test
 
 # Runs tinyrasputin in a certain mode
 package-run +FLAGS='': (package-build)
-    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile run {{FLAGS}}
+    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} run {{FLAGS}}
 
 # Builds tinyrasputin in a certain mode
 package-build: (_build-dir-exists) (_copy-files) (_generate-package-listing)
-    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile build
+    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} build
 
 package-test +FLAGS='': (package-build)
-    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile test {{FLAGS}}
+    cd {{build-dir}}/{{mode}} && just -d . --justfile justfile mode={{mode}} test {{FLAGS}}
 
 _make-build-dir: 
     mkdir -p {{build-dir}}/{{mode}}
@@ -35,10 +35,8 @@ _build-dir-exists:
 _vendor-exists: (_build-dir-exists)
     test -d {{build-dir}}/{{mode}}/vendor
 
-_copy-files: (_build-dir-exists) (_copy-justfile)
+_copy-files: (_build-dir-exists)
     cp -rt {{build-dir}}/{{mode}} {{base-package}}
-
-_copy-justfile: (_build-dir-exists)
     cp package-justfile {{build-dir}}/{{mode}}/justfile
     @echo 'Renewed basic build environment for {{mode}} build'
 
