@@ -52,7 +52,7 @@ _make-build-dir:
     mkdir -p {{build-dir}}/{{mode}}
     echo "Created environment for {{mode}} build."
 
-_build-dir-exists:
+@_build-dir-exists:
     test -d {{build-dir}}/{{mode}}
 
 _copy-files: (_build-dir-exists) (_copy_base_files)
@@ -66,15 +66,15 @@ _copy_base_files: (_build-dir-exists)
     @echo 'Renewed basic build environment for {{mode}} build'
 
 # Select a Cargo file based off of the desired mode
-@_select-cargo: (clean-environment)  (_make-build-dir) (_copy_base_files) (_copy-files)
+_select-cargo: (clean-environment)  (_make-build-dir) (_copy_base_files) (_copy-files)
     rm -rf {{build-dir}}/{{mode}}/Cargo.toml
     cat Cargo-header.toml Cargo-{{mode}}.toml  > {{build-dir}}/{{mode}}/Cargo.toml
-    echo "Created Cargo.toml for {{mode}} build."
+    @echo "Created Cargo.toml for {{mode}} build."
 
-@_clean-package:
+_clean-package:
     rm -f tinyrasputin-{{mode}}.zip
 
-@_clean-vendor:
+_clean-vendor:
     rm -rf {{build-dir}}/{{mode}}/vendor
 
 # Checks if a package is theoretically complete
@@ -116,13 +116,8 @@ _create_command_json +FLAGS='':
 
 # Build the packge that we will upload to the server in the specified run mode
 package +FLAGS='': (_clean-package) (package-build) (_create_command_json FLAGS)
-    #!/usr/bin/env sh
     echo 'Packing tinyrasputin-{{mode}}.zip...'
-    cd {{build-dir}}/{{mode}}
-    for target in .cargo justfile src Cargo.* commands.json .env $PACKAGE_TARGETS_{{mode}} vendor; do
-        echo Zipping {{build-dir}}/{{mode}}/$target...;
-        7z a -r ../../tinyrasputin-{{mode}}.zip $target > nul;
-    done
+    cd {{build-dir}}/{{mode}} && 7z a -r ../../tinyrasputin-{{mode}}.zip `echo ".cargo justfile src Cargo.* commands.json .env vendor {{env_var(package_targets)}}"`
 
 # Build the environment then repackage
 rebuild-environment: (build-environment) (package)
