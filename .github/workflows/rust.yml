@@ -14,12 +14,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Cache cargo files
+    - name: Cache cargo bin
       uses: actions/cache@v1
       id: cache
       with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-cargo
+        path: ~/.cargo/bin
+        key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/*') }}
     - name: Install just
       if: steps.cache.outputs.cache-hit != 'true'
       run: cargo install just
@@ -42,12 +42,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
-    - name: Cache cargo files
+    - name: Cache cargo bin
       uses: actions/cache@v1
       id: cache
       with:
-        path: ~/.cargo
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        path: ~/.cargo/bin
+        key: ${{ runner.os }}-cargo-bin-${{ hashFiles('**/*') }}
     - name: Install just
       if: steps.cache.outputs.cache-hit != 'true'
       run: cargo install just
