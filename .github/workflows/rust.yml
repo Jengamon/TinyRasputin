@@ -24,7 +24,7 @@ jobs:
           ${{ runner.os }}-cargo-bin-
           ${{ runner.os }}-
     - name: Install just
-      if: steps.cache.outputs.cache-hit != true
+      if: steps.cache.outputs.cache-hit == 'false'
       run: cargo install just
     - name: Setup environment
       run: just env && just mode=release env
@@ -55,7 +55,7 @@ jobs:
           ${{ runner.os }}-cargo-bin-
           ${{ runner.os }}-
     - name: Install just
-      if: steps.cache.outputs.cache-hit == false
+      if: steps.cache.outputs.cache-hit == 'false'
       run: cargo install just
     - name: Setup environment
       shell: bash
