@@ -17,5 +17,5 @@ approx = "^0.3"
 codegen-units = 16
 # panic = 'abort'
 # Lower release optimization
-opt-level = 0 # Compiling in time is more optimal than optimizing
-incremental = true
+# opt-level = 2 # Compiling in time is more optimal than optimizing
+# incremental = true

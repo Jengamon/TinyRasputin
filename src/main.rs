@@ -82,10 +82,12 @@ fn analyze_mode<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
                     println!("Rule violation: {} -> {}", a, b);
                 }
                 let correctness = 1.0 - ((violations.len() as f64).max(0.0) / (relations.len() as f64).max(1.0));
-                let selected_possibilities = simplified.into_iter().filter(|x| !violations.contains(&x)).collect::<Vec<_>>().possibilities();
+                let selected_possibilities = simplified.possibilities();
+                let correct_possibilities = simplified.into_iter().filter(|x| !violations.contains(&x)).collect::<Vec<_>>().possibilities();
                 println!("Correctness: {:.3}%", 100.0 * correctness);
-                println!("Selected {} correct possibilities", selected_possibilities);
-                println!("Likelyhood of guessing correctly: {:.3}%", 100.0 * correctness * (1.0 - (selected_possibilities as f64 / 6227020800.0)));
+                println!("Selected {} possibilities", selected_possibilities);
+                println!("Selected out of {} equivalently likely possibilities", correct_possibilities);
+                println!("Likelyhood of guessing correctly: {:.3}%", 100.0 * correctness * (1.0 - (selected_possibilities as f64 / correct_possibilities as f64)));
             },
             "is_possible" => {
                 let order = into_ordering!(vec lines.remove(0).chars().map(|c| c.to_string().parse::<CardValue>()).collect::<Vec<_>>());
