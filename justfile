@@ -9,6 +9,9 @@ run-mode := package-mode
 package-targets := "PACKAGE_TARGETS_" + package-mode
 base-package := "src " + env_var(package-targets)
 package-contents := "vendor .cargo/config Cargo.* commands.json .package-list justfile " + base-package
+build-timeout := "10"
+respect-timeout := "true"
+build-flags := ""
 
 export RUST_BACKTRACE := "1"
 
@@ -42,12 +45,18 @@ local-test +FLAGS='': (local-build)
         cargo test --offline --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
     fi
 
-# Builds tinyrasputin in a certain package-mode
-package-build +FLAGS='': (_select-cargo package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode)
-    cd {{build-dir}}/{{package-mode}} && just -d . --justfile justfile mode={{run-mode}} build
+# Puts the package through a dry run as if it was on the server
+package-run +FLAGS='': (package-build "false")
+    time -p just -d {{build-dir}}/{{package-mode}} --justfile {{build-dir}}/{{package-mode}}/justfile mode={{run-mode}} run {{FLAGS}}
+
+# Builds tinyrasputin in a certain package-mode within build-timeout seconds
+package-build must-pass +FLAGS='': (clean-package package-mode) (_select-cargo package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode)
+    cd {{build-dir}}/{{package-mode}} && timeout -k {{build-timeout}} {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='{{build-flags}}' build || true
+    @if [ {{must-pass}} = true ]; then if [ $? -ne 124 ]; then echo "Build too long. Failing build...."; exit 1; fi; fi
+    @if [ $? -ne 124 ]; then echo "Build too long. Killing..."; fi
 
 # Tests tiny rasputin in a certain package-mode as it would run in package package-mode
-package-test +FLAGS='': (package-build)
+package-test +FLAGS='': (package-build respect-timeout)
     cd {{build-dir}}/{{package-mode}} && just -d . --justfile justfile mode={{run-mode}} test {{FLAGS}}
 
 _make-build-dir mode: 
@@ -68,19 +77,21 @@ _select-cargo mode: (_build-dir-exists mode)
     cat Cargo-header.toml Cargo-{{mode}}.toml  > {{build-dir}}/{{mode}}/Cargo.toml
     @echo "Created Cargo.toml for {{mode}} build."
 
-_clean-package mode:
+# Erase build artifacts for a selected package-mode
+clean-package mode:
     rm -f tinyrasputin-{{mode}}.zip
+    rm -rf {{build-dir}}/{{mode}}/target
 
 _generate-package-listing mode: (_copy-files mode)
     rm -rf {{build-dir}}/{{mode}}/.package-list
     cd {{build-dir}}/{{mode}} && find {{package-contents}} -type f -print > .package-list
 
-# Erase build artifacts for a selected package-mode
-clean-environment mode: (_clean-package mode)
+# Erase build artifacts for a selected package-mode (including environment)
+clean-environment mode: (clean-package mode)
     rm -rf {{build-dir}}/{{mode}}
 
 # Erase all build artifacts
-clean-all: (_clean-package "debug") (_clean-package "release")
+clean-all: (clean-environment "debug") (clean-environment "release")
     rm -rf {{build-dir}}
     rm -rf target
 
@@ -92,10 +103,10 @@ build-environment: (clean-environment package-mode) (_make-build-dir package-mod
     cd {{build-dir}}/{{package-mode}} && cargo vendor vendor > .cargo/config
 
 _create-command-json mode +FLAGS='': (_build-dir-exists mode)
-    sed -e "s/MODE/{{package-mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{package-mode}}/commands.json
+    sed -e "s/MODE/{{package-mode}}/g" -e "s/FLAGS/{{FLAGS}}/g" -e "s/BUILD_FLAGS/{{build-flags}}/g" commands-template.json > {{build-dir}}/{{package-mode}}/commands.json
 
 # Build the packge that we will upload to the server in the specified run package-mode
-package +FLAGS='': (_clean-package package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode) (package-build FLAGS)
+package +FLAGS='': (clean-package package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode) (package-build respect-timeout FLAGS)
     @echo 'Packing tinyrasputin-{{package-mode}}.zip...'
     cd {{build-dir}}/{{package-mode}} && 7z a -r ../../tinyrasputin-{{package-mode}}.zip {{package-contents}}
 

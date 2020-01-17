@@ -102,11 +102,11 @@ jobs:
     - name: Setup environment
       run: just env && just package-mode=release env
     - name: Build
-      run: just package-build
+      run: just respect-timeout=false package-build
     - name: Run tests
-      run: just package-test
+      run: just respect-timeout=false package-test
     - name: Build release package
-      run: just package-mode=release package
+      run: just respect-timeout=false package-mode=release package
     - name: Upload release package
       uses: actions/upload-artifact@v1
       with:
@@ -134,13 +134,13 @@ jobs:
       run: just env && just package-mode=release env
     - name: Build
       shell: bash
-      run: just package-build
+      run: just respect-timeout=false package-build
     - name: Run tests
       shell: bash
-      run: just package-test
+      run: just respect-timeout=false package-test
     - name: Build release package
       shell: bash
-      run: just package-mode=release package
+      run: just respect-timeout=false package-mode=release package
     - name: Upload release package
       uses: actions/upload-artifact@v1
       with:

@@ -1,4 +1,5 @@
 mode := "debug"
+build-flags := ""
 
 # Run using a specified local mode (can only be called on built packages)
 @run +FLAGS='': (build)
@@ -6,7 +7,7 @@ mode := "debug"
 
 # Build using specified local mode (can only be called on built packages)
 @build: (_package-complete)
-    if [ {{mode}} = release ]; then cargo build --offline --frozen -q --release; else cargo build --offline --frozen; fi
+    if [ {{mode}} = release ]; then cargo build {{build-flags}} --offline --frozen -q --release --lib; else cargo build {{build-flags}} --offline --frozen --lib; fi
 
 @test +FLAGS='': (build)
     if [ {{mode}} = release ]; then cargo test --offline --frozen --release -q -- {{FLAGS}}; else cargo test --offline --frozen -- {{FLAGS}}; fi
