@@ -1,4 +1,4 @@
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{TcpStream, Shutdown, ToSocketAddrs};
 use super::bot::PokerBot;
 use std::io::{prelude::*, BufReader};
 use crate::into_cards;
@@ -8,7 +8,7 @@ use super::cards::{Card, CardHand, CardDeck};
 use std::time::{Duration};
 use crate::debug_println;
 use super::thread_pool::ThreadPool;
-use std::sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, RwLock};
+use std::sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, LockResult};
 use itertools::Itertools;
 
 const CONNECT_TIMEOUT: u64 = 10;
@@ -145,6 +145,13 @@ impl Socket {
     }
 }
 
+// Shutdown the socket even if we panic, and right when we panic
+impl Drop for Socket {
+    fn drop(&mut self) {
+        self.stream.get_mut().shutdown(Shutdown::Both).expect("shutdown call failed")
+    }
+}
+
 impl Runner {
     /// Runs a PokerBot using the Runner
     pub fn run_bot<TS>(bot: Box<dyn PokerBot + Send + Sync>, addr: TS) -> std::io::Result<()> where TS: ToSocketAddrs {
@@ -163,6 +170,19 @@ impl Runner {
         }
     }
 
+    // We never want to block access to state when we have write access to the bot, as
+    // that is asking for a lockup to happen, so we have some functions that continually query
+    // whether the device (piece of state) is actually ready for bot access
+    // This function polls for unique access
+    fn poll_until_write<T>(device: Arc<RwLock<T>>, device_id: &'static str) -> LockResult<RwLockWriteGuard<T>> {
+        todo!()
+    }
+
+    // This function polls for read access
+    fn poll_until_read<T>(device: Arc<RwLock<T>>, device_id: &'static str) -> LockResult<RwLockReadGuard<T>> {
+        todo!()
+    }
+
     /// Processes actions from the engine and never returns when called
     fn run(&mut self, bot: Box<dyn PokerBot + Send + Sync>) {
         let game_state = Arc::new(RwLock::new(GameState {
@@ -172,7 +192,7 @@ impl Runner {
         }));
         let round_state: Arc<RwLock<Option<RoundState>>> = Arc::new(RwLock::new(None));
         let terminal_state: Arc<RwLock<Option<TerminalState>>> = Arc::new(RwLock::new(None));
-        let bot = Arc::new(RwLock::new(bot)); // Wrap the bot in a read-write lock
+        let bot = Arc::new(Mutex::new(bot)); // Wrap the bot in a read-write lock
         let player_index = Arc::new(AtomicUsize::new(0usize));
         let pool = ThreadPool::new(THREAD_COUNT).unwrap();
         loop {
@@ -183,59 +203,57 @@ impl Runner {
                 pool.execute(9, move || {
                     // Acquire the round state if it is available, but DO NOT BLOCK ( but maybe block the socket for a bit... )
                     // let mut socket = socket.lock().unwrap();
-                    let round_state = round_state.try_read();
-                    let game_state = game_state.try_read();
-                    let bot = bot.try_write();
+                    let mut bot = bot.lock().unwrap();
+                    let round_state = Runner::poll_until_read(round_state, "round").unwrap();
+                    let game_state = Runner::poll_until_read(game_state, "game").unwrap();
                     // Check if there even is a round state
-                    if let (Ok(round_state), Ok(game_state), Ok(mut bot)) = (round_state, game_state, bot) {
-                        if let Some(ref round_state) = *round_state {
-                            // Clone the current copy of round state
-                            let player_index = player_index.load(PLAYER_INDEX_ORDERING);
-                            assert!(player_index == round_state.button as usize % 2);
-                            let bot_action = bot.get_action(&*game_state, &*round_state, player_index);
-                            let legal_actions = round_state.legal_actions();
-                            // Coerce the action to the next best action
-                            let action = match bot_action {
-                                Action::Raise(raise) => if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
-                                    let [rb_min, rb_max] = round_state.raise_bounds();
-                                    if raise > rb_min && raise < rb_max {
-                                        Action::Raise(raise)
-                                    } else {
-                                        if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
-                                            Action::Check
-                                        } else {
-                                            Action::Call
-                                        }
-                                    }
+                    if let Some(ref round_state) = *round_state {
+                        // Clone the current copy of round state
+                        let player_index = player_index.load(PLAYER_INDEX_ORDERING);
+                        assert!(player_index == round_state.button as usize % 2);
+                        let bot_action = bot.get_action(&*game_state, round_state, player_index);
+                        let legal_actions = round_state.legal_actions();
+                        // Coerce the action to the next best action
+                        let action = match bot_action {
+                            Action::Raise(raise) => if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
+                                let [rb_min, rb_max] = round_state.raise_bounds();
+                                if raise > rb_min && raise < rb_max {
+                                    Action::Raise(raise)
                                 } else {
                                     if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
                                         Action::Check
                                     } else {
                                         Action::Call
                                     }
-                                },
-                                Action::Check => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
-                                    Action::Check
-                                } else {
-                                    Action::Fold
-                                },
-                                Action::Call => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                }
+                            } else {
+                                if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
                                     Action::Check
                                 } else {
                                     Action::Call
-                                },
-                                Action::Fold => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
-                                    Action::Check
-                                } else {
-                                    Action::Fold
                                 }
-                            };
-                            if bot_action != action {
-                                debug_println!("[SkelyBoi] Coerced {:?} into {:?}", bot_action, action);
+                            },
+                            Action::Check => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                Action::Check
+                            } else {
+                                Action::Fold
+                            },
+                            Action::Call => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                Action::Check
+                            } else {
+                                Action::Call
+                            },
+                            Action::Fold => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                Action::Check
+                            } else {
+                                Action::Fold
                             }
-                            let mut socket = socket.lock().unwrap();
-                            socket.send(action);
+                        };
+                        if bot_action != action {
+                            debug_println!("[SkelyBoi] Coerced {:?} into {:?}", bot_action, action);
                         }
+                        let mut socket = socket.lock().unwrap();
+                        socket.send(action);
                     }
                 });
             }
@@ -268,9 +286,9 @@ impl Runner {
                         hands[player_index] = Some(hand);
                         let pips = [SMALL_BLIND, BIG_BLIND];
                         let stacks = [STARTING_STACK - SMALL_BLIND, STARTING_STACK - BIG_BLIND];
-                        let mut round_state = round_state.write().unwrap();
-                        let game_state = game_state.read().unwrap();
-                        let mut bot = bot.write().unwrap();
+                        let mut bot = bot.lock().unwrap();
+                        let mut round_state = Runner::poll_until_write(round_state, "round").unwrap();
+                        let game_state = Runner::poll_until_read(game_state, "game").unwrap();
                         let round = RoundState {
                             button: 0,
                             street: 0,
@@ -280,7 +298,7 @@ impl Runner {
                             deck: CardDeck(vec![]),
                             previous: None
                         };
-                        bot.handle_new_round(&game_state, &round, player_index);
+                        bot.handle_new_round(&*game_state, &round, player_index);
                         *round_state = Some(round);
                     }),
                     // A fold action
@@ -392,10 +410,10 @@ impl Runner {
                     }),
                     // Delta has been calculated
                     ServerAction::Delta(delta) => pool.execute(8, move || {
-                        let mut round_state = round_state.write().unwrap();
-                        let mut game_state = game_state.write().unwrap();
-                        let mut terminal_state = terminal_state.write().unwrap();
-                        let mut bot = bot.write().unwrap();
+                        let mut bot = bot.lock().unwrap();
+                        let mut round_state = Runner::poll_until_write(round_state, "round").unwrap();
+                        let mut game_state = Runner::poll_until_write(game_state, "game").unwrap();
+                        let mut terminal_state = Runner::poll_until_write(terminal_state, "terminal").unwrap();
                         let player_index = player_index.load(PLAYER_INDEX_ORDERING);
                         assert!(terminal_state.is_some());
                         if let Some(ref tstate) = *terminal_state {
@@ -428,7 +446,7 @@ impl Runner {
             }
 
             self.socket.lock().unwrap().sync();
-            std::thread::sleep(Duration::from_millis(SLEEP_DURATION));
+            // std::thread::sleep(Duration::from_millis(SLEEP_DURATION));
         }
     }
 }
