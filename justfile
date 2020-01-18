@@ -10,7 +10,7 @@ run-mode := package-mode
 
 package-targets := "PACKAGE_TARGETS_" + package-mode
 base-package := "src " + env_var(package-targets)
-package-contents := "vendor target .cargo/config Cargo.* commands.json .package-list justfile " + base-package
+package-contents := "vendor target/" + run-mode + "/.cargo-lock .cargo/config Cargo.toml commands.json .package-list justfile " + base-package
 build-timeout := "10"
 respect-timeout := "true"
 
@@ -47,26 +47,44 @@ local-test +FLAGS='': (local-build)
         cargo test --offline --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
     fi
 
-# Puts the package through a dry run as if it was on the server
+# Puts the package through a dry run as if it was on the server and measures its time
 package-run +FLAGS='': (package-build "false")
     time -p just -d {{build-dir}}/{{package-mode}} --justfile {{build-dir}}/{{package-mode}}/justfile mode={{run-mode}} run {{FLAGS}}
 
 # Builds tinyrasputin in a certain package-mode within build-timeout seconds
-package-build must-pass +FLAGS='': (clean-package package-mode) (_select-cargo package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode)
+package-build must-pass +FLAGS='': (_select-cargo package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode)
     #!/usr/bin/env bash
-    echo "Running build using timeout {{build-timeout}} respect-timeout={{must-pass}}"
-    cd {{build-dir}}/{{package-mode}}
-    if [ {{must-pass}} = true ]; then
-        timeout -k {{build-timeout}} {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build;
-    else
-        timeout -k {{build-timeout}} {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build || true;
+    check_errs()
+    {
+    # Function. Parameter 1 is the return code
+    # Para. 2 is text to display on failure.
+    if [ "${1}" -eq "${2}" ]; then
+        echo "ERROR # ${1} : ${3}"
+        # as a bonus, make our script exit with the right error code.
     fi
-    set RESULT=$?
-    if [ $RESULT -eq 124 ]; then echo "Build too long. Killed"; fi
+    # Propagate the error
+    if [ "${1}" -ne "${2}" ]; then exit ${1}; else if [ {{must-pass}} = true ]; then exit ${1}; fi; fi 
+    }
+
+    cd {{build-dir}}/{{package-mode}}
+    if [ {{run-mode}} = release ]; then 
+        cargo build-deps --release;
+    else
+        cargo build-deps;
+    fi
+    echo "Running build using timeout {{build-timeout}} respect-timeout={{must-pass}}"
+
+    if [ {{must-pass}} = true ]; then
+        timeout -k 2s {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build;
+        check_errs $? 124 "Build timed out.";
+    else
+        timeout --preserve-status -s 9 {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build || true;
+    fi
+    
 
 # Tests tiny rasputin in a certain package-mode as it would run in package package-mode
 package-test +FLAGS='': (package-build respect-timeout)
-    cd {{build-dir}}/{{package-mode}} && just -d . --justfile justfile mode={{run-mode}} test {{FLAGS}}
+    cd {{build-dir}}/{{package-mode}}; just -d . --justfile justfile mode={{run-mode}} test {{FLAGS}}
 
 _touch-target mode: (_build-dir-exists mode)
     mkdir -p {{build-dir}}/{{mode}}/target
@@ -78,7 +96,7 @@ _make-build-dir mode:
 _build-dir-exists mode:
     test -d {{build-dir}}/{{mode}}
 
-_copy-files mode +FLAGS="": (_build-dir-exists mode) (_create-command-json mode FLAGS) (_touch-target mode)
+_copy-files mode +FLAGS="": (_build-dir-exists mode) (_touch-target mode) (_create-command-json FLAGS)
     cp -rt {{build-dir}}/{{mode}} {{base-package}}
     cp package-justfile {{build-dir}}/{{mode}}/justfile
     @echo 'Renewed basic build environment for {{mode}} build'
@@ -92,7 +110,6 @@ _select-cargo mode: (_build-dir-exists mode)
 # Erase build artifacts for a selected package-mode
 clean-package mode:
     rm -f tinyrasputin-{{mode}}.zip
-    rm -rf {{build-dir}}/{{mode}}/target
 
 _generate-package-listing mode: (_copy-files mode)
     rm -rf {{build-dir}}/{{mode}}/.package-list
@@ -110,30 +127,30 @@ clean-all: (clean-environment "debug") (clean-environment "release")
 build-environment: (clean-environment package-mode) (_make-build-dir package-mode) (_select-cargo package-mode) (_copy-files package-mode)
     rm -rf {{build-dir}}/{{package-mode}}/.cargo
     mkdir {{build-dir}}/{{package-mode}}/.cargo
-    cd {{build-dir}}/{{package-mode}} && cargo update
+    cd {{build-dir}}/{{package-mode}} && cargo fetch
     cd {{build-dir}}/{{package-mode}} && cargo vendor vendor > .cargo/config
 
-_create-command-json mode +FLAGS='': (_build-dir-exists mode)
-    sed -e "s/MODE/{{package-mode}}/g" -e"s/BUILDFLAGS/$BUILD_FLAGS/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{package-mode}}/commands.json;
+_create-command-json +FLAGS='': (_build-dir-exists package-mode)
+    sed -e "s/MODE/{{run-mode}}/g" -e"s/BUILDFLAGS/$BUILD_FLAGS/g" -e "s/FLAGS/{{FLAGS}}/g" commands-template.json > {{build-dir}}/{{package-mode}}/commands.json;
 
-# Build the packge that we will upload to the server in the specified run package-mode
-package +FLAGS='': (clean-package package-mode) (_copy-files package-mode FLAGS) (_generate-package-listing package-mode) (package-build respect-timeout FLAGS)
+# Build a source-only package that we will upload to the server in the specified run package-mode
+package +FLAGS='': (clean-package package-mode) (_copy-files package-mode FLAGS) (package-build respect-timeout FLAGS) (_generate-package-listing package-mode)
     @echo 'Packing tinyrasputin-{{package-mode}}.zip...'
     cd {{build-dir}}/{{package-mode}} && 7z a -r ../../tinyrasputin-{{package-mode}}.zip {{package-contents}}
 
 # Build the environment then repackage
 repackage: (build-environment) (package)
 
-_package-exists mode:
-    test -f tinyrasputin-{{mode}}.zip
+_package-exists mode ext='':
+    test -f tinyrasputin-{{mode}}{{ext}}.zip
 
-_create-test-directory mode: (_package-exists mode)
-    rm -rf ../server_tinyrasputin
-    7z x -bb0 -y -o../server_tinyrasputin -- tinyrasputin-{{mode}}.zip > nul
+_create-test-directory mode ext='': (_package-exists mode ext)
+    rm -R -f ../server_tinyrasputin
+    7z x -bb0 -y -o../server_tinyrasputin -- tinyrasputin-{{mode}}{{ext}}.zip > nul
 
 # Test the built package of the specified package-mode
-test-package mode: (_create-test-directory mode) (_package-exists mode)
-    cd .. && {{python}} engine.py
+test-package mode: (_create-test-directory mode "") (_package-exists mode "")
+    cd .. && sh true_engine.sh
 
 # Create a dependency graph for a package-mode
 dep-graph mode: (_build-dir-exists mode)

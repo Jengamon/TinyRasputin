@@ -4,28 +4,28 @@ use crate::{
     engine::relations::{relationships, detect_cycles},
 };
 use std::collections::HashMap;
-use std::cell::RefCell;
 use itertools::Itertools;
 use approx::{relative_eq, relative_ne};
 use std::collections::HashSet;
 use std::convert::AsRef;
 use std::cmp::Ordering;
 use crate::debug_println;
+use std::sync::{Arc, RwLock};
 
 const CONFIRMATION_THRESHOLD: f64 = 0.5;
 const EPSILON: f64 = std::f64::EPSILON;
 
 #[derive(Debug, Clone)]
 pub struct ProbabilityEngine {
-    seen: RefCell<HashMap<(CardValue, CardValue), (f64, usize, Vec<(String, f64)>)>>,
-    inconsistent_rules: RefCell<HashSet<String>>,
+    seen: Arc<RwLock<HashMap<(CardValue, CardValue), (f64, usize, Vec<(String, f64)>)>>>,
+    inconsistent_rules: Arc<RwLock<HashSet<String>>>,
 }
 
 impl ProbabilityEngine {
     pub fn new() -> ProbabilityEngine {
         ProbabilityEngine {
-            seen: RefCell::new(HashMap::new()),
-            inconsistent_rules: RefCell::new(HashSet::new()),
+            seen: Arc::new(RwLock::new(HashMap::new())),
+            inconsistent_rules: Arc::new(RwLock::new(HashSet::new())),
         }
     }
 
@@ -44,67 +44,82 @@ impl ProbabilityEngine {
 
         let mut rng = rand::thread_rng();
 
-        if a != b && certainty != 0.0 && !self.inconsistent_rules.borrow().contains(name.as_ref()) {
-            let (certainty, a, b) = if a < b { (certainty, a, b) } else { (-certainty, b, a) };
-
-            // let relations: Vec<_> = self.probabilities().into_iter().filter_map(|((a, b), p)| if p > 0.0 { Some((a, b)) } else if p < 0.0 { Some((b, a)) } else { None }).collect();
-            // let transitive = relations.iter().filter(|(a2, b2)| {
-            //     let (mut pre, _, _) = relationships(&relations, &a2);
-            //     let (_, mut post, _) = relationships(&relations, &b2);
-            //     post.any(|x| x == *b) && pre.any(|x| x == *a) && !(a == a2 && b == b2)
-            // }).inspect(|(a, b)| debug_println!("Transitively updating {} -> {} with probability {}", a, b, certainty));
-
-            // for (a, b) in transitive {
-            //     self._update(a, b, certainty);
-            // }
-
-            let mut seen = self.seen.borrow_mut();
-            let (probability, reps, names) = seen.entry((*a, *b)).or_insert((0.0, 0, vec![]));
-            *reps += 1;
-            *probability += certainty.abs() * (if *reps > 1 {rng.gen_range(1, *reps)} else {1} as f64  / *reps as f64) * (certainty.signum() - *probability);
-            let pair = (name.as_ref().to_string(), certainty);
-            if !names.contains(&pair) {
-                names.push(pair);
+        if let Ok(ir) = self.inconsistent_rules.read() {
+            if a != b && certainty != 0.0 && !ir.contains(name.as_ref()) {
+                let (certainty, a, b) = if a < b { (certainty, a, b) } else { (-certainty, b, a) };
+    
+                if let Ok(mut seen) = self.seen.write() {
+                    let (probability, reps, names) = seen.entry((*a, *b)).or_insert((0.0, 0, vec![]));
+                    *reps += 1;
+                    *probability += certainty.abs() * (if *reps > 1 {rng.gen_range(1, *reps)} else {1} as f64  / *reps as f64) * (certainty.signum() - *probability);
+                    let pair = (name.as_ref().to_string(), certainty);
+                    if !names.contains(&pair) {
+                        names.push(pair);
+                    }
+                    assert!(!probability.is_nan());
+                } else {
+                    panic!("seen is not writeable");
+                }
+    
+                true
+            } else {
+                false
             }
-
-            assert!(!probability.is_nan());
-            true
         } else {
-            false
+            panic!("inconsistent rules were not readable")
         }
     }
 
     pub fn likely_ordering(&self, a: &CardValue, b: &CardValue) -> Option<(CardValue, CardValue)> {
         let (scale, a, b) = if a < b { (1.0, a, b) } else { (-1.0, b, a) };
 
-        let mut seen = self.seen.borrow_mut();
-        let probability = seen.entry((*a, *b)).or_insert((0.0, 0, vec![])).0 * scale;
-        if probability > 0.0 {
-            Some((*a, *b))
-        } else if probability < 0.0 {
-            Some((*b, *a))
+        if let Ok(mut seen) = self.seen.write() {
+            let probability = seen.entry((*a, *b)).or_insert((0.0, 0, vec![])).0 * scale;
+            if probability > 0.0 {
+                Some((*a, *b))
+            } else if probability < 0.0 {
+                Some((*b, *a))
+            } else {
+                None
+            }
         } else {
-            None
+            panic!("seen is not writeable")
         }
     }
 
     pub fn probability(&self, a: &CardValue, b: &CardValue) -> f64 {
         let (scale, a, b) = if a < b { (1.0, a, b) } else { (-1.0, b, a) };
 
-        self.seen.borrow().get(&(*a, *b)).map(|(p, _, _)| p * scale).unwrap_or(0.0)
+        if let Ok(seen) = self.seen.read() {
+            seen.get(&(*a, *b)).map(|(p, _, _)| p * scale).unwrap_or(0.0)
+        } else {
+            panic!("seen is not readable");
+        }
     }
 
     pub fn probabilities(&self) -> Vec<((CardValue, CardValue), f64)> {
-        self.seen.borrow().iter().map(|(k, (v, _, _))| (*k, *v)).collect()
+        if let Ok(seen) = self.seen.read() {
+            seen.iter().map(|(k, (v, _, _))| (*k, *v)).collect()
+        } else {
+            panic!("seen is not readable");
+        }
     }
 
     pub fn get_rules(&self, a: &CardValue, b: &CardValue) -> Vec<(String, f64)> {
         let (a, b) = if a < b { (a, b) } else { (b, a) };
-        self.seen.borrow().get(&(*a, *b)).map(|(_, _, n)| n.clone()).unwrap_or(vec![])
+        if let Ok(seen) = self.seen.read() {
+            seen.get(&(*a, *b)).map(|(_, _, n)| n.clone()).unwrap_or(vec![])
+        } else {
+            panic!("seen is not readable")
+        }  
     }
 
     pub fn inconsistent_rule_names(&self) -> Vec<String> {
-        self.inconsistent_rules.borrow().iter().cloned().collect()
+        if let Ok(ir) = self.inconsistent_rules.read() {
+            ir.iter().cloned().collect()
+        } else {
+            panic!("inconsistent rules were not readable");
+        }
     }
 
     pub fn relations(&self) -> Vec<(CardValue, CardValue)> {
@@ -301,15 +316,17 @@ impl ProbabilityEngine {
                                         Some(Ordering::Equal) | None => a.signum().partial_cmp(&b.signum()).unwrap(),
                                         Some(other) => other,
                                     }) {
-                                        let mut inc_rules = self.inconsistent_rules.borrow_mut();
-                                        let pre_len = inc_rules.len();
-                                        let intersection = &vec![rule.clone()].into_iter().collect::<HashSet<_>>() | &inc_rules;
-                                        *inc_rules = intersection;
-                                        let post_len = inc_rules.len();
-                                        if post_len > pre_len {
-                                            debug_println!("Marking rule {} as inconsistant.", rule);
+                                        if let Ok(mut inc_rules) = self.inconsistent_rules.write() {
+                                            let pre_len = inc_rules.len();
+                                            let intersection = &vec![rule.clone()].into_iter().collect::<HashSet<_>>() | &inc_rules;
+                                            *inc_rules = intersection;
+                                            let post_len = inc_rules.len();
+                                            if post_len > pre_len {
+                                                debug_println!("Marking rule {} as inconsistant.", rule);
+                                            }
+                                        } else {
+                                            panic!("Inconsistent rules were not writeable")
                                         }
-                                        
                                     } else {
                                         debug_println!("Problematic rule {} -> {} was generated by a weak rule. Wiping...", a, b);
                                     }
@@ -318,7 +335,10 @@ impl ProbabilityEngine {
                                     debug_println!("Problematic pair {} -> {} was randomly generated by rule [{}]", a, b, rules[0].0);
                                 }
                             }
-                            self.seen.borrow_mut().remove(&key);
+
+                            if let Ok(mut seen) = self.seen.write() {
+                                seen.remove(&key);
+                            }
                         } else { // Our confidence is either equal to or less than our probability. Let's not panic yet, just fix if possible.
                             debug_println!("Problematic cyclical relation {0} -> {1} formed with prob {2:.2}. Weak rule conflict or wrong information generation is possible. Weakening rule...", a, b, prob.abs());
                             self._update("", &a, &b, -prob.abs());

@@ -20,6 +20,7 @@ use rand::prelude::*;
 use itertools::Itertools;
 // use num_format::{Locale, ToFormattedString};
 use std::cell::{RefCell, Cell};
+use std::sync::{RwLock, atomic::{AtomicBool, Ordering as AtomicOrdering}};
 use std::borrow::Borrow;
 
 // const SAMPLE_GUESS_THRESHOLD: u64 = 1000;
@@ -27,13 +28,15 @@ const RAISE_HAPPY: f64 = 0.7;
 const RAISE_CAUTIOUS: f64 = 0.3;
 #[cfg(not(debug_assertions))]
 const FILE_BYTE_SIZE: usize = 524288;
+const DIRTY_ORDERING: AtomicOrdering = AtomicOrdering::SeqCst;
 
+#[derive(Debug)]
 pub struct TourneyV1Bot {
     ordering: [CardValue; 13],
     prob_engine: ProbabilityEngine,
     // A relations cache, so we only recalculate when something changes
-    relations: RefCell<Vec<(CardValue, CardValue)>>,
-    relations_dirty: Cell<bool>,
+    relations: RwLock<Vec<(CardValue, CardValue)>>,
+    relations_dirty: AtomicBool,
 
     // Learn your opponent to learn what you should do
     opponent_raise_count: u32,
@@ -48,8 +51,8 @@ impl Default for TourneyV1Bot {
         TourneyV1Bot {
             ordering: generate_ordering(&vec![]),
             prob_engine: ProbabilityEngine::new(),
-            relations: RefCell::new(vec![]),
-            relations_dirty: Cell::new(false),
+            relations: RwLock::new(vec![]),
+            relations_dirty: AtomicBool::new(false),
             opponent_raise_count: 0,
             running_guess: Guess::new(),
             byte_count: 0,
@@ -62,17 +65,25 @@ impl TourneyV1Bot {
         self.running_guess.update(a, b, round_num, strength as f32);
         if self.prob_engine.update(log_string.borrow(), &a, &b, strength) {
             self.debug_print(format!("[{}] Saw relationship {} -> {} with strength {:.2}...", log_string.borrow(), a, b, strength), 0.3);
-            self.relations_dirty.set(true);
+            self.relations_dirty.store(true, DIRTY_ORDERING);
         }
     }
 
     fn relations(&self) -> Vec<(CardValue, CardValue)> {
-        if self.relations_dirty.get() {
+        if self.relations_dirty.load(DIRTY_ORDERING) {
             // Regenerate relations
-            *self.relations.borrow_mut() = self.prob_engine.relations();
-            self.relations_dirty.set(false);
+            if let Ok(mut relations) = self.relations.write() {
+                *relations = self.prob_engine.relations();
+                self.relations_dirty.store(false, DIRTY_ORDERING);
+            } else {
+                panic!("relations were not writeable")
+            }
         }
-        self.relations.borrow().iter().copied().collect()
+        if let Ok(relations) = self.relations.read() {
+            relations.iter().copied().collect()
+        } else {
+            panic!("relations were not readable")
+        }
     }
 
     #[cfg(not(debug_assertions))]
@@ -155,8 +166,8 @@ impl PokerBot for TourneyV1Bot {
             } else {
                 (my_hand.clone(), opp_hand.clone())
             };
-            let mut print_prediction = |my_hand, opp_hand, delta| {
-                let state = |n: i64| if n > 0 {
+            let mut print_prediction = |my_hand, opp_hand, delta: i32| {
+                let state = |n: i32| if n > 0 {
                     "won"
                 } else if n < 0 {
                     "lost"

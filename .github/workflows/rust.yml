@@ -101,8 +101,6 @@ jobs:
       run: echo $PATH && just --list
     - name: Setup environment
       run: just env && just package-mode=release env
-    - name: Build
-      run: just respect-timeout=false package-build
     - name: Run tests
       run: just respect-timeout=false package-test
     - name: Build release package
@@ -132,9 +130,6 @@ jobs:
     - name: Setup environment
       shell: bash
       run: just env && just package-mode=release env
-    - name: Build
-      shell: bash
-      run: just respect-timeout=false package-build
     - name: Run tests
       shell: bash
       run: just respect-timeout=false package-test

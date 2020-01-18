@@ -1,6 +1,8 @@
 mode := "debug"
 build-flags := ""
 
+export CARGO_INCREMENTAL := "0"
+
 # Run using a specified local mode (can only be called on built packages)
 @run +FLAGS='': (_package-complete)
     if [ {{mode}} = release ]; then cargo run --offline --frozen --release -q -- {{FLAGS}}; else cargo run --offline --frozen -- {{FLAGS}}; fi
@@ -8,9 +10,9 @@ build-flags := ""
 # Build using specified local mode in 10 seconds, then kill the process
 @build: (_package-complete)
     if [ {{mode}} = release ]; then \
-        cargo check {{build-flags}} --offline --frozen -q --release && cargo build {{build-flags}} -q --offline --release --frozen; \
+        cargo build --offline --frozen -q --release -p tinyrasputin --lib; \
     else \
-        cargo check {{build-flags}} --offline --frozen && cargo build {{build-flags}} --offline --frozen; \
+        cargo build --offline --frozen -p tinyrasputin --lib; \
     fi
 
 @test +FLAGS='': (build)

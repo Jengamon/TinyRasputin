@@ -184,7 +184,7 @@ fn main() -> std::io::Result<()> {
         debug_println!("Connecting to {}:{}...", host, port);
         debug_println!("Attempting to run bot version {}...", botv);
         // Change the bot type here, and as long as it implements Default, it'll be built
-        let mut bot: Box<dyn PokerBot> = match botv {
+        let bot: Box<dyn PokerBot + Send + Sync> = match botv {
             "test" => Box::new(TestBot::default()),
             "l1" => Box::new(Lesson1Bot::default()),
             "l2" => Box::new(Lesson2Bot::default()),
@@ -192,7 +192,7 @@ fn main() -> std::io::Result<()> {
             "empty" => Box::new(EmptyBot::default()),
             _ => panic!("Invalid bot version: {}", botv)
         };
-        Runner::run_bot(&mut bot, (host.parse::<Ipv4Addr>().expect("Expected IPv4 address for host"), port))
+        Runner::run_bot(bot, (host.parse::<Ipv4Addr>().expect("Expected IPv4 address for host"), port))
     } else {
         unreachable!()
     }

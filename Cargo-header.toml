@@ -5,6 +5,8 @@ authors = ["Jengamon <bob.hostern@gmail.com>"]
 edition = "2018"
 publish = false
 
+# Since we don't optimize the crate, we have to optimize our code...
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -14,8 +16,8 @@ itertools = "^0.8"
 approx = "^0.3"
 
 [profile.release]
-codegen-units = 16
+codegen-units = 1
 # panic = 'abort'
 # Lower release optimization
-# opt-level = 2 # Compiling in time is more optimal than optimizing
+opt-level = 3 # Compiling in time is more optimal than optimizing
 # incremental = true

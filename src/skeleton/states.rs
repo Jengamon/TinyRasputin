@@ -18,9 +18,9 @@ pub struct GameState {
 }
 
 /// Final state of a poker round corresponding to payoffs
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TerminalState {
-    pub deltas: [i64; 2],
+    pub deltas: [i32; 2],
     pub previous: RoundState,
 }
 
@@ -37,7 +37,7 @@ pub struct RoundState {
 }
 
 /// Stores either a RoundState or a TerminalState
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum StateResult {
     Round(RoundState),
     Terminal(TerminalState),
@@ -109,7 +109,7 @@ impl RoundState {
                     delta = STARTING_STACK - self.stacks[1]
                 }
                 StateResult::Terminal(TerminalState{
-                    deltas: [delta as i64, -(delta as i64)],
+                    deltas: [delta as i32, -(delta as i32)],
                     previous: self.clone()
                 })
             },
