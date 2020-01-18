@@ -5,21 +5,21 @@ use crate::into_cards;
 use super::actions::{Action, ActionType};
 use super::states::{SMALL_BLIND, BIG_BLIND, STARTING_STACK, GameState, RoundState, TerminalState, StateResult};
 use super::cards::{Card, CardHand, CardDeck};
-use std::time::{Duration};
+use std::time::{Duration, Instant};
 use crate::debug_println;
 use super::thread_pool::ThreadPool;
 use std::sync::{atomic::{AtomicUsize, Ordering}, Arc, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, LockResult};
 use itertools::Itertools;
 
 const CONNECT_TIMEOUT: u64 = 10;
-const READ_TIMEOUT: u64 = 5;
-const WRITE_TIMEOUT: u64 = 1;
+const WRITE_TIMEOUT: u64 = 2;
 const PLAYER_INDEX_ORDERING: Ordering = Ordering::SeqCst;
 const THREAD_COUNT: usize = 3;
 const SLEEP_DURATION: u64 = 300;
 
 pub struct Runner {
     socket: Arc<Mutex<Socket>>,
+    runner_start: Instant,
 }
 
 #[derive(Debug)]
@@ -73,7 +73,7 @@ impl Socket {
 
         // Check stream for errors. If there is one, disconnect.
         if let Ok(Some(error)) = socket.get_ref().take_error() {
-            panic!("[SkelyBoi] Disconnecting because of stream error {}", error);
+            panic!("[Runner] Disconnecting because of stream error {}", error);
         }
 
         // Read
@@ -90,10 +90,10 @@ impl Socket {
 
         // If we read any actions, dump any we were going to push
         if server_process.len() > 0 {
-            debug_println!("[SkelyBoi] Read actions from socket [{}]", server_process.iter().format(", "));
+            debug_println!("[Runner] Read actions from socket [{}]", server_process.iter().format(", "));
         }
 
-        debug_println!("[SkelyBoi] Syncing socket with actions [{}]", actions_to_write.iter().map(|x| format!("{:?}", x)).format(", "));
+        debug_println!("[Runner] Syncing socket with actions [{}]", actions_to_write.iter().map(|x| format!("{:?}", x)).format(", "));
 
         // Ok, now we own the socket. write everything and then read. All shouldn't block for too long.
         for action in actions_to_write.into_iter() {
@@ -148,7 +148,11 @@ impl Socket {
 // Shutdown the socket even if we panic, and right when we panic
 impl Drop for Socket {
     fn drop(&mut self) {
-        self.stream.get_mut().shutdown(Shutdown::Both).expect("shutdown call failed")
+        match self.stream.get_mut().shutdown(Shutdown::Both) {
+            Ok(()) => debug_println!("Successfully shut down socket"),
+            // We don't really care about errors here, as our goal is simply to end the socket
+            Err(_) => {}
+        }
     }
 }
 
@@ -163,6 +167,7 @@ impl Runner {
             // stream.set_nonblocking(true).expect("set_nonblocking call failed");
             let mut runner = Runner {
                 socket: Arc::new(Mutex::new(Socket::new(BufReader::new(stream)))),
+                runner_start: Instant::now(),
             };
             Ok(runner.run(bot))
         } else {
@@ -194,7 +199,7 @@ impl Runner {
         let terminal_state: Arc<RwLock<Option<TerminalState>>> = Arc::new(RwLock::new(None));
         let bot = Arc::new(Mutex::new(bot)); // Wrap the bot in a read-write lock
         let player_index = Arc::new(AtomicUsize::new(0usize));
-        let pool = ThreadPool::new(THREAD_COUNT).unwrap();
+        let mut pool = ThreadPool::new(THREAD_COUNT).unwrap();
         loop {
             {
                 let (socket, player_index) = (self.socket.clone(), player_index.clone());
@@ -250,7 +255,7 @@ impl Runner {
                             }
                         };
                         if bot_action != action {
-                            debug_println!("[SkelyBoi] Coerced {:?} into {:?}", bot_action, action);
+                            println!("[Runner] Coerced {:?} into {:?}. Check bot for error.", bot_action, action);
                         }
                         let mut socket = socket.lock().unwrap();
                         socket.send(action);
@@ -266,7 +271,7 @@ impl Runner {
                 let (game_state, round_state, terminal_state, bot, player_index) = (game_state.clone(), round_state.clone(), terminal_state.clone(), bot.clone(), player_index.clone());
                 // The main runner code is entirely run in thread pools! We reserve the main thread for getting the action from our bot and
                 // either sending or receiving it, otherwise we should update entirely asyncrously
-                debug_println!("[SkelyBoi] Received {:?}", clause);
+                debug_println!("[Runner] Received {:?}", clause);
                 match clause.clone() {
                     // Set game clock
                     ServerAction::SetGameClock(clock) => pool.execute(0, move || {
@@ -448,5 +453,12 @@ impl Runner {
             self.socket.lock().unwrap().sync();
             // std::thread::sleep(Duration::from_millis(SLEEP_DURATION));
         }
+    }
+}
+
+impl Drop for Runner {
+    fn drop(&mut self) {
+        let runtime = Instant::now() - self.runner_start;
+        println!("[Runner] Ran for {:?}", runtime);
     }
 }

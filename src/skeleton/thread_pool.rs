@@ -62,29 +62,52 @@ impl ThreadPool {
         }
     }
 
-    pub fn execute<F>(&self, job_type: usize, f: F) where F: FnOnce() + Send + 'static {
+    pub fn execute<F>(&mut self, job_type: usize, f: F) where F: FnOnce() + Send + 'static {
         // Send the job to the queue
         let new_job: (Box<dyn FnBox + Send + 'static>, _) = (Box::new(f), job_type);
 
-        self.sender.send(Message::NewJob(new_job)).unwrap();
+        // If this panics, we have no workers left,
+        // so shutdown and panic
+        if let Err(_) = self.sender.send(Message::NewJob(new_job)) {
+            self.shutdown();
+            panic!("All workers panicked");
+        }
+    }
+
+    pub fn shutdown(&mut self) {
+        for _ in &mut self.workers {
+            // Here we don't care about send errors
+            // If we send, great.
+            // If not, we don't care, cause that means everyone is dead.
+            // We just want to end and merge all threads
+            if let Ok(_) = self.sender.send(Message::Terminate) {
+                // do nothing
+            }
+        }
+
+        let mut count = 0;
+
+        for worker in &mut self.workers {
+            if let Some(thread) = worker.thread.take() {
+                debug_println!("Shutting down worker {}", worker.id);
+                count += 1;
+                // If a thread panicked, just print what it panicked with
+                match thread.join() {
+                    Ok(_) => debug_println!("Worker {} did not panic", worker.id),
+                    // It is possible to panic with a non-Display error,
+                    // but Debug is implemented for Any, so use that
+                    Err(_) => debug_println!("Worker {} paniced", worker.id)
+                };
+            }
+        }
+
+        debug_println!("Shut down {} workers.", count);
     }
 }
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
-        for _ in &mut self.workers {
-            self.sender.send(Message::Terminate).unwrap();
-        }
-
-        debug_println!("Shutting down all workers!");
-
-        for worker in &mut self.workers {
-            debug_println!("Shutting down worker {}", worker.id);
-
-            if let Some(thread) = worker.thread.take() {
-                thread.join().unwrap();
-            }
-        }
+        self.shutdown()
     }
 }
 

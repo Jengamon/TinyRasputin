@@ -16,8 +16,6 @@ itertools = "^0.8"
 approx = "^0.3"
 
 [profile.release]
-codegen-units = 1
+codegen-units = 1 # Make the most out of build time and optimize the hell out of us
 # panic = 'abort'
-# Lower release optimization
-opt-level = 3 # Compiling in time is more optimal than optimizing
 # incremental = true
