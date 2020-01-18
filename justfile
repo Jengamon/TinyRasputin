@@ -28,7 +28,7 @@ local-run +FLAGS='': (local-build)
     @if [ {{run-mode}} = release ]; then \
         cargo run --offline --release --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
     else \
-        cargo run --offline --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
+        cargo run --offline --features debug_print --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
     fi
 
 # Builds tinyrasputin in a certain mode locally
@@ -36,7 +36,7 @@ local-build: (_copy-files run-mode)
     @if [ {{run-mode}} = release ]; then \
         cargo build --offline --release --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml; \
     else \
-        cargo build --offline --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml; \
+        cargo build --offline --features debug_print --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml; \
     fi
 
 # Tests tinyrasputin in a certain mode locally
@@ -44,7 +44,7 @@ local-test +FLAGS='': (local-build)
     @if [ {{run-mode}} = release ]; then \
         cargo test --offline --release --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
     else \
-        cargo test --offline --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
+        cargo test --offline --features debug_print --manifest-path {{build-dir}}/{{run-mode}}/Cargo.toml -- {{FLAGS}}; \
     fi
 
 # Puts the package through a dry run as if it was on the server and measures its time
@@ -63,11 +63,11 @@ package-build must-pass +FLAGS='': (_select-cargo package-mode) (_copy-files pac
         # as a bonus, make our script exit with the right error code.
     fi
     # Propagate the error
-    if [ "${1}" -ne "${2}" ]; then exit ${1}; else if [ {{must-pass}} = true ]; then exit ${1}; fi; fi 
+    if [ "${1}" -ne "${2}" ]; then exit ${1}; else if [ {{must-pass}} = true ]; then exit ${1}; fi; fi
     }
 
     cd {{build-dir}}/{{package-mode}}
-    if [ {{run-mode}} = release ]; then 
+    if [ {{run-mode}} = release ]; then
         cargo build-deps --release;
     else
         cargo build-deps;
@@ -80,7 +80,7 @@ package-build must-pass +FLAGS='': (_select-cargo package-mode) (_copy-files pac
     else
         timeout --preserve-status -s 9 {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build || true;
     fi
-    
+
 
 # Tests tiny rasputin in a certain package-mode as it would run in package package-mode
 package-test +FLAGS='': (package-build respect-timeout)
@@ -89,7 +89,7 @@ package-test +FLAGS='': (package-build respect-timeout)
 _touch-target mode: (_build-dir-exists mode)
     mkdir -p {{build-dir}}/{{mode}}/target
 
-_make-build-dir mode: 
+_make-build-dir mode:
     mkdir -p {{build-dir}}/{{mode}}
     echo "Created environment for {{package-mode}} build."
 

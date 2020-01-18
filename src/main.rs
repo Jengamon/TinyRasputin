@@ -7,6 +7,8 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::convert::AsRef;
 
+const THREAD_COUNT: usize = 2;
+
 #[cfg(debug_assertions)]
 fn analyze_mode<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
     use std::io::{BufReader, BufRead};
@@ -192,7 +194,7 @@ fn main() -> std::io::Result<()> {
             "empty" => Box::new(EmptyBot::default()),
             _ => panic!("Invalid bot version: {}", botv)
         };
-        Runner::run_bot(bot, (host.parse::<Ipv4Addr>().expect("Expected IPv4 address for host"), port))
+        Runner::run_bot(bot, (host.parse::<Ipv4Addr>().expect("Expected IPv4 address for host"), port), THREAD_COUNT)
     } else {
         unreachable!()
     }

@@ -87,21 +87,23 @@ impl ThreadPool {
 
         let mut count = 0;
 
+        debug_println!("[ThreadPool] Sent terminate to all workers");
+
         for worker in &mut self.workers {
             if let Some(thread) = worker.thread.take() {
-                debug_println!("Shutting down worker {}", worker.id);
+                debug_println!("[ThreadPool] Shutting down worker {}", worker.id);
                 count += 1;
                 // If a thread panicked, just print what it panicked with
                 match thread.join() {
-                    Ok(_) => debug_println!("Worker {} did not panic", worker.id),
+                    Ok(_) => debug_println!("[ThreadPool] Worker {} did not panic", worker.id),
                     // It is possible to panic with a non-Display error,
                     // but Debug is implemented for Any, so use that
-                    Err(_) => debug_println!("Worker {} paniced", worker.id)
+                    Err(_) => debug_println!("[ThreadPool] Worker {} paniced", worker.id)
                 };
             }
         }
 
-        debug_println!("Shut down {} workers.", count);
+        debug_println!("[ThreadPool] Shut down {} workers.", count);
     }
 }
 
@@ -122,12 +124,12 @@ impl Worker {
 
                 match message {
                     Message::NewJob((job, name)) => {
-                        debug_println!("Worker {} received new job of type {}", id, name);
+                        debug_println!("[Worker] Worker {} received new job of type {}", id, name);
 
                         job.call_box();
                     },
                     Message::Terminate => {
-                        debug_println!("Worker {} was told to terminate.", id);
+                        debug_println!("[Worker] Worker {} was told to terminate.", id);
 
                         break;
                     },

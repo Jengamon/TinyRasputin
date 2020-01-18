@@ -5,14 +5,18 @@ export CARGO_INCREMENTAL := "0"
 
 # Run using a specified local mode (can only be called on built packages)
 @run +FLAGS='': (_package-complete)
-    if [ {{mode}} = release ]; then cargo run --offline --frozen --release -q -- {{FLAGS}}; else cargo run --offline --frozen -- {{FLAGS}}; fi
+    if [ {{mode}} = release ]; then \
+      cargo run --offline --frozen --release -q -- {{FLAGS}}; \
+    else \
+      cargo run --offline --frozen --features debug_print -- {{FLAGS}}; \
+    fi
 
 # Build using specified local mode in 10 seconds, then kill the process
 @build: (_package-complete)
     if [ {{mode}} = release ]; then \
         cargo build --offline --frozen -q --release -p tinyrasputin --lib; \
     else \
-        cargo build --offline --frozen -p tinyrasputin --lib; \
+        cargo build --offline --frozen -p tinyrasputin --lib --features debug_print; \
     fi
 
 @test +FLAGS='': (build)
@@ -24,4 +28,3 @@ export CARGO_INCREMENTAL := "0"
 # Checks if a package is theoretically complete using a generated listing
 @_package-complete: (_package-listing-exists)
     while read -r line; do test -f $line; done < .package-list
-    

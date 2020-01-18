@@ -2,13 +2,13 @@
 pub mod engine;
 pub mod skeleton;
 
-#[cfg(debug_assertions)]
+#[cfg(feature = "debug_print")]
 #[macro_export]
 macro_rules! debug_println {
     ( $($args : expr),* ) => { println! ( $( $args ),* ) };
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(not(feature = "debug_print"))]
 #[macro_export]
 macro_rules! debug_println {
     ( $($args : expr),* ) => { print!("") };
