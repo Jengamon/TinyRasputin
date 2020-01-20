@@ -1,10 +1,14 @@
 use std::{fmt, error, thread};
 use std::sync::{mpsc, Arc, Mutex};
 use crate::debug_println;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::panic;
 
 pub struct ThreadPool {
     workers: Vec<Worker>,
     sender: mpsc::Sender<Message>,
+    flags: Vec<Arc<AtomicBool>>,
+    // receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
 }
 
 struct Worker {
@@ -48,15 +52,18 @@ impl ThreadPool {
     pub fn new(size: usize) -> Result<ThreadPool, PoolCreationError> {
         if size > 0 {
             let mut workers = Vec::with_capacity(size);
+            let mut flags = Vec::with_capacity(size);
 
             let (sender, receiver) = mpsc::channel();
             let receiver = Arc::new(Mutex::new(receiver));
 
             for id in 0..size {
-                workers.push(Worker::new(id, Arc::clone(&receiver)));
+                let flag = Arc::new(AtomicBool::new(true));
+                workers.push(Worker::new(id, Arc::clone(&receiver), flag.clone()));
+                flags.push(flag);
             }
 
-            Ok(ThreadPool { workers, sender })
+            Ok(ThreadPool { workers, sender, flags })//, receiver })
         } else {
             Err(PoolCreationError::EmptyPool)
         }
@@ -66,11 +73,22 @@ impl ThreadPool {
         // Send the job to the queue
         let new_job: (Box<dyn FnBox + Send + 'static>, _) = (Box::new(f), job_type);
 
+        // If a worker crashes, we should reboot it.
+        for (i, flag) in self.flags.iter().enumerate() {
+            let flag_ = flag.load(Ordering::SeqCst);
+            if !flag_ {
+                // self.shutdown();
+                if let Some(thread) = self.workers[i].thread.take() {
+                    panic!("[ThreadPool] Worker {} panicked. Killing all workers...", i);
+                }
+                // self.workers[i] = Worker::new(i, Arc::clone(&self.receiver), flag.clone());
+            }
+        }
+
         // If this panics, we have no workers left,
         // so shutdown and panic
         if let Err(_) = self.sender.send(Message::NewJob(new_job)) {
-            self.shutdown();
-            panic!("All workers panicked");
+            panic!("All workers panicked or closed. Unrecoverable errors.");
         }
     }
 
@@ -109,16 +127,26 @@ impl ThreadPool {
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
-        self.shutdown()
+        self.shutdown();
     }
 }
 
 impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Worker {
+    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Message>>>, flag: Arc<AtomicBool>) -> Worker {
         let builder = thread::Builder::new()
             .name(format!("[Worker {}]", id));
 
         let thread = builder.spawn(move || {
+            // Get the default handler
+            let default_hook = panic::take_hook();
+
+            panic::set_hook(Box::new(move |p| {
+                // Add some notification stuff so we report to the main thread we crashed
+                flag.store(false, Ordering::SeqCst);
+                // Panic with the big boi
+                default_hook(p);
+            }));
+
             loop {
                 let message = receiver.lock().unwrap().recv().unwrap();
 

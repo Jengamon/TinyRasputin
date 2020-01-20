@@ -77,15 +77,12 @@ impl RoundState {
 
     /// Resets the players' pips and advances the game tree to the next round of betting.
     pub fn proceed_street(&self) -> StateResult {
+        // Don't rely on street's value as that update could happen before or after updating the deck,
+        // Look at decks length, however, before showdown, make sure decks length is synced with streets length
         if self.street == 5 {
             return StateResult::Terminal(self.showdown());
         }
-        let new_street;
-        if self.street == 0 {
-            new_street = 3;
-        } else {
-            new_street = self.street + 1;
-        }
+        let new_street = self.deck.0.len() as u32;
         StateResult::Round(RoundState {
             button: 1,
             street: new_street,

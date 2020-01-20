@@ -24,4 +24,11 @@ impl Action {
             Action::Raise(amt) => *amt
         }
     }
+
+    pub fn is_raise(&self) -> bool {
+        match self {
+            Action::Raise(_) => true,
+            _ => false,
+        }
+    }
 }

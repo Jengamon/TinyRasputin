@@ -16,10 +16,10 @@ itertools = "^0.8"
 approx = "^0.3"
 
 [profile.release]
-codegen-units = 32
+codegen-units = 16
 # panic = 'abort'
-# incremental = true
-opt-level = 0 # Compile in time rather than efficiently
+incremental = true
+opt-level = 2 # Compile in time rather than efficiently
 
 [features]
 debug_print = []

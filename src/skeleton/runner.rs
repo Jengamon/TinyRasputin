@@ -9,22 +9,29 @@ use std::time::{Duration, Instant};
 use crate::debug_println;
 use super::thread_pool::ThreadPool;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicUsize, AtomicBool, Ordering},
     Arc, Mutex, RwLock,
     TryLockError,
     RwLockReadGuard, RwLockWriteGuard,
     MutexGuard,
     mpsc::channel,
 };
+#[cfg(feature = "debug_print")]
 use itertools::Itertools;
 use std::thread;
+use approx::relative_eq;
 
 const CONNECT_TIMEOUT: u64 = 10; // seconds
-const READ_TIMEOUT: u64 = 10; // seconds
-const WRITE_TIMEOUT: u64 = 2; // seconds
-const PLAYER_INDEX_ORDERING: Ordering = Ordering::SeqCst;
+// const READ_TIMEOUT: u64 = 1; // microseconds
+const WRITE_TIMEOUT: u64 = 1; // microseconds
+// Pretty important due to how fast we are running.
+// If a sent packet doesn't arrive in time, throw it away.
+// const PACKET_TTL: u32 = 2; // seconds
+const PLAYER_INDEX_LOAD_ORDERING: Ordering = Ordering::SeqCst;
+const PLAYER_INDEX_STOR_ORDERING: Ordering = Ordering::SeqCst;
 const MAX_THREAD_COUNT: usize = 16;
-const SLEEP_DURATION: u64 = 10; // milliseconds
+const SLEEP_DURATION: u64 = 1; // milliseconds
+const COMP_TIME: u64 = 60; // microseconds
 
 pub struct Runner {
     socket: Arc<Mutex<Socket>>,
@@ -36,7 +43,8 @@ pub struct Runner {
 struct Socket {
     stream: BufReader<TcpStream>,
     read_queue: Vec<ServerAction>,
-    write_action: Option<Action>,
+    write_action: Vec<Action>,
+    round_sent: AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +68,10 @@ enum ServerAction {
 enum PreservedOrdering {
     Action(Action),
     Delta(i32),
+    StartRound(CardHand),
+    Reveal(CardHand),
+    UpdateDeck(CardDeck),
+    SetPlayerIndex(usize),
 }
 
 impl Socket {
@@ -67,19 +79,61 @@ impl Socket {
         Socket {
             stream,
             read_queue: vec![],
-            write_action: None,
+            write_action: vec![], // We always start off with checking to ack the server
+            round_sent: AtomicBool::new(false),
         }
     }
 
     /// Returns an incoming message from the engine.
     fn receive(&mut self) -> Vec<ServerAction> {
-        let mess = self.read_queue.drain(..).collect();
-        mess
+        self.read_queue.drain(..).collect()
+    }
+
+    fn ping(&mut self) {
+        debug_println!("[Socket] Will ping server");
+        self.send(Action::Check);
     }
 
     /// Send an action message to the engine
-    fn send(&mut self, act: Action) {
-        self.write_action = Some(act);
+    fn send(&mut self, action: Action) {
+        let ref mut socket = self.stream;
+
+        let code = match action {
+            Action::Fold => "F".into(),
+            Action::Call => "C".into(),
+            Action::Check => "K".into(),
+            Action::Raise(amt) => format!("R{}", amt)
+        };
+
+        let mut retries = 10;
+        while self.round_sent.load(Ordering::SeqCst) {
+            match writeln!(socket.get_mut(), "{}", code) {
+                Ok(_) => break,
+                Err(e) => if retries > 0 {
+                    debug_println!("[Socket] Send error {}. Retrying...", e);
+                    retries -= 1;
+                } else {
+                    panic!("[Socket] Server unresponsive. Panicing...")
+                }
+            }
+            socket.get_mut().flush().unwrap();
+        }
+
+        self.round_sent.store(false, Ordering::SeqCst);
+
+        Socket::check_for_socket_errors(socket.get_ref());
+    }
+
+    fn check_for_socket_errors(socket: &TcpStream) {
+        // Check stream for errors. If there is one, disconnect.
+        match socket.take_error() {
+            Ok(Some(error)) => panic!("[Socket] Disconnecting because of stream error {}", error),
+            Ok(None) => {}, // No stream error detected
+            Err(e) => match e.kind() {
+                ErrorKind::TimedOut | ErrorKind::WouldBlock => {}, // We don't care about these errors,
+                kind => panic!("[Socket] Unexpected error when checking for socket errors ({:?}) {}", kind, e)
+            }
+        }
     }
 
     // Do all I/O processing here
@@ -88,56 +142,32 @@ impl Socket {
         // Write as much as we can, then read all the actions we can
         let ref mut socket = self.stream;
 
-        // Check stream for errors. If there is one, disconnect.
-        if let Ok(Some(error)) = socket.get_ref().take_error() {
-            panic!("[Socket] Disconnecting because of stream error {}", error);
-        }
-
-        // Ok, write everything. All shouldn't block for too long.
-        if let Some(action) = self.write_action.take() {
-            let code = match action {
-                Action::Fold => "F".into(),
-                Action::Call => "C".into(),
-                Action::Check => "K".into(),
-                Action::Raise(amt) => format!("R{}", amt)
-            };
-            debug_println!("[Socket] Trying to send action {:?}", self.write_action);
-            match writeln!(socket.get_mut(), "{}", code) {
-                Err(e) => debug_println!("[Socket] On writing action {}, {}", code, e),
-                _ => {}
-            }
-        } else {
-            writeln!(socket.get_mut(), "C").expect("Unable to ack server");
-        }
-
-        // Flush
-        match socket.get_mut().flush() {
-            Err(e) => debug_println!("[Socket] On flushing, {}", e),
-            _ => {}
-        };
-
         // Read
         let mut s = String::new();
 
         // Make read and write non-blocking, so we don't run out of time if our opponent does
         match socket.read_line(&mut s) {
-            Ok(_) => for action in s.trim().split(" ").map(|x| x.trim().to_string()) {
-                if !action.is_empty() {
-                    server_process.push(action);
-                }
-            },
-            // Check the error type
+            Ok(_) => {},
             Err(e) => match e.kind() {
-                // Our reading connection timed out, so the server hasn't sent us anything yet
-                ErrorKind::WouldBlock | ErrorKind::TimedOut => {},
-                // This is an I/O error that should be reported
-                _ => panic!("[Socket] Read error {}", e)
+                ErrorKind::WouldBlock => {},
+                kind => panic!("[Socket] Unexpected read error ({:?}) {}", kind, e)
             }
         }
 
+        for action in s.trim().split(" ").map(|x| x.trim().to_string()) {
+            if !action.is_empty() {
+                server_process.push(action);
+            }
+        }
+
+        Socket::check_for_socket_errors(socket.get_ref());
+
         if server_process.len() > 0 {
+            // self.round_sent = false;
             debug_println!("[Socket] Read actions from socket [{}]", server_process.iter().format(", "));
         }
+
+        Socket::check_for_socket_errors(socket.get_ref());
 
         // Process server strings into ServerAction objects
         for action in server_process.into_iter() {
@@ -187,8 +217,9 @@ impl Runner {
         if let Some(addr) = addr.to_socket_addrs()?.nth(0) {
             let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(CONNECT_TIMEOUT))?;
             stream.set_nodelay(true).expect("set_nodelay call failed");
-            stream.set_read_timeout(Some(Duration::from_secs(READ_TIMEOUT))).expect("read_timeout call failed");
-            stream.set_write_timeout(Some(Duration::from_secs(WRITE_TIMEOUT))).expect("write_timeout call failed");
+            // stream.set_read_timeout(Some(Duration::from_micros(READ_TIMEOUT))).expect("read_timeout call failed");
+            stream.set_write_timeout(Some(Duration::from_micros(WRITE_TIMEOUT))).expect("write_timeout call failed");
+            // stream.set_ttl(PACKET_TTL).expect("set_ttl call failed");
             // stream.set_nonblocking(true).expect("set_nonblocking call failed");
             let mut runner = Runner {
                 socket: Arc::new(Mutex::new(Socket::new(BufReader::new(stream)))),
@@ -263,261 +294,279 @@ impl Runner {
 
         let (action_sender, action_receiver) = channel();
         let action_receiver = Arc::new(Mutex::new(action_receiver));
+        //let barrier = Arc::new(Barrier::new(2));
+        let mut state_change = false;
 
         loop {
-            // Sync I/O (send messages that we want to write, and read our next actions)
-            Runner::lock_device(&self.socket, "socket").sync();
+            {
+                let socket = self.socket.clone();
+                pool.execute(88, move || {
+                    Runner::lock_device(&socket, "socket").sync();
+                });
+            }
 
-            // Read the server messages and then react to them by changing our state
-            let clauses = self.socket.clone().lock().unwrap().receive();
-            for clause in clauses.into_iter() {
-                //let chr = clause.chars().nth(0).unwrap();
-                //let arg = clause.chars().skip(1).collect::<String>();
-                // Get our current state.
-                let (game_state, round_state, terminal_state, bot, player_index) = (game_state.clone(), round_state.clone(), terminal_state.clone(), bot.clone(), player_index.clone());
-                // The main runner code is entirely run in thread pools! We reserve the main thread for getting the action from our bot and
-                // either sending or receiving it, otherwise we should update entirely asyncrously
-                let action_sender = action_sender.clone();
-                debug_println!("[Runner] Received {:?}", clause);
-                match clause.clone() {
-                    // Set game clock
-                    ServerAction::SetGameClock(clock) => pool.execute(13, move || {
-                        let mut game_state = Runner::poll_until_write(&game_state, "game");
-                        debug_println!("[Runner] Setting game clock to {:.3}", clock);
-                        *game_state = GameState {
-                            bankroll: game_state.bankroll,
-                            game_clock: clock,
-                            round_num: game_state.round_num
-                        };
-                    }),
-                    // Set player index (also referred to as "active")
-                    ServerAction::SetPlayerIndex(index) => player_index.store(index, PLAYER_INDEX_ORDERING),
-                    // Set our hand
-                    ServerAction::SetPlayerHand(hand) => pool.execute(3, move || {
-                        let mut hands = [None, None];
-                        let player_index = player_index.load(PLAYER_INDEX_ORDERING);
-                        hands[player_index] = Some(hand);
-                        let pips = [SMALL_BLIND, BIG_BLIND];
-                        let stacks = [STARTING_STACK - SMALL_BLIND, STARTING_STACK - BIG_BLIND];
-                        let mut round_state = Runner::poll_until_write(&round_state, "round");
-                        let game_state = Runner::poll_until_read(&game_state, "game");
-                        debug_println!("[Runner] Setting player's hand and starting round");
-                        let round = RoundState {
-                            button: 0,
-                            street: 0,
-                            pips,
-                            stacks,
-                            hands,
-                            deck: CardDeck(vec![]),
-                            previous: None
-                        };
-                        let mut bot = Runner::lock_device(&bot, "bot");
-                        bot.handle_new_round(&*game_state, &round, player_index);
-                        *round_state = Some(round);
-                    }),
-                    // Since the server doesn't tell us who did what, we have to preserve that information
-                    // By preserving the order of actions, so we push them to a queue and run them all in order
+            // Read from the server
+            {
+                let mut socket = Runner::lock_device(&self.socket, "socket");
+                // Read the server messages and then react to them by changing our state
+                let clauses = socket.receive();
+                for clause in clauses.into_iter() {
+                    state_change = true;
+                    // Runner::lock_device(&self.socket, "socket").write_action = None; // Clear the current action.
+                    //let chr = clause.chars().nth(0).unwrap();
+                    //let arg = clause.chars().skip(1).collect::<String>();
+                    // Get our current state.
+                    let (game_state, round_state, terminal_state, bot, player_index) = (game_state.clone(), round_state.clone(), terminal_state.clone(), bot.clone(), player_index.clone());
+                    // The main runner code is entirely run in thread pools! We reserve the main thread for getting the action from our bot and
+                    // either sending or receiving it, otherwise we should update entirely asyncrously
+                    let action_sender = action_sender.clone();
+                    match clause.clone() {
+                        // Set game clock
+                        ServerAction::SetGameClock(clock) => {
+                            let mut game_state = Runner::poll_until_write(&game_state, "game");
+                            debug_println!("[Runner] Setting game clock to {:.3}", clock);
+                            *game_state = GameState {
+                                bankroll: game_state.bankroll,
+                                game_clock: clock,
+                                round_num: game_state.round_num
+                            };
+                        },
+                        // Set player index (also referred to as "active")
+                        ServerAction::SetPlayerIndex(index) => action_sender.send(PreservedOrdering::SetPlayerIndex(index)).unwrap(),
+                        // Set our hand
+                        ServerAction::SetPlayerHand(hand) => action_sender.send(PreservedOrdering::StartRound(hand)).unwrap(),
+                        // Since the server doesn't tell us who did what, we have to preserve that information
+                        // By preserving the order of actions, so we push them to a queue and run them all in order
 
-                    // A fold action
-                    ServerAction::PlayFold => action_sender.send(PreservedOrdering::Action(Action::Fold)).unwrap(),
-                    // A call action
-                    ServerAction::PlayCall => action_sender.send(PreservedOrdering::Action(Action::Call)).unwrap(),
-                    // A check action
-                    ServerAction::PlayCheck => action_sender.send(PreservedOrdering::Action(Action::Check)).unwrap(),
-                    // A raise action
-                    ServerAction::PlayRaise(by) => action_sender.send(PreservedOrdering::Action(Action::Raise(by))).unwrap(),
-                    // The deck was updated
-                    ServerAction::UpdateDeck(deck) => pool.execute(0, move || {
-                        let mut round_state = Runner::poll_until_write(&round_state, "round");
-                        debug_println!("[Runner] Updating deck");
-                        if let Some(ref rs) = *round_state {
-                            *round_state = Some(RoundState {
-                                button: rs.button,
-                                street: rs.street,
-                                pips: rs.pips,
-                                stacks: rs.stacks,
-                                hands: rs.hands,
-                                deck,
-                                previous: rs.previous.clone()
-                            })
-                        } else {
-                            panic!("Round state must exist for this action")
-                        }
-                    }),
-                    // Reveal the opponent's hand
-                    ServerAction::RevealOpponentHand(hand) => pool.execute(1, move || {
-                        let round_state = Runner::poll_until_read(&round_state, "round");
-                        if let Some(ref rs) = *round_state {
-                            let mut terminal_state = Runner::poll_until_write(&terminal_state, "terminal");
-                            debug_println!("[Runner] Revealing opponent's hand");
-                            if let Some(ref prs) = rs.previous {
-                                let player_index = player_index.load(PLAYER_INDEX_ORDERING);
-                                // backtrack
-                                let mut revised_hands = prs.hands;
-                                revised_hands[1 - player_index] = Some(hand);
-                                // rebuild history
-                                let new_round_state = RoundState {
-                                    button: prs.button,
-                                    street: prs.street,
-                                    pips: prs.pips,
-                                    stacks: prs.stacks,
-                                    hands: revised_hands,
-                                    deck: prs.deck.clone(),
-                                    previous: prs.previous.clone()
-                                };
-                                *terminal_state = Some(TerminalState{
-                                    deltas: [0, 0],
-                                    previous: new_round_state
-                                })
-                            }
-                        } else {
-                            panic!("Round state must exist for reveal action")
-                        }
-                    }),
-                    // Delta has been calculated
-                    ServerAction::Delta(delta) => action_sender.send(PreservedOrdering::Delta(delta)).unwrap(),
-                    // End the game
-                    ServerAction::Quit => return,
+                        // A fold action
+                        ServerAction::PlayFold => action_sender.send(PreservedOrdering::Action(Action::Fold)).unwrap(),
+                        // A call action
+                        ServerAction::PlayCall => action_sender.send(PreservedOrdering::Action(Action::Call)).unwrap(),
+                        // A check action
+                        ServerAction::PlayCheck => action_sender.send(PreservedOrdering::Action(Action::Check)).unwrap(),
+                        // A raise action
+                        ServerAction::PlayRaise(by) => action_sender.send(PreservedOrdering::Action(Action::Raise(by))).unwrap(),
+                        // The deck was updated
+                        ServerAction::UpdateDeck(deck) => action_sender.send(PreservedOrdering::UpdateDeck(deck)).unwrap(),
+                        // Reveal the opponent's hand
+                        ServerAction::RevealOpponentHand(hand) => action_sender.send(PreservedOrdering::Reveal(hand)).unwrap(),
+                        // Delta has been calculated
+                        ServerAction::Delta(delta) => action_sender.send(PreservedOrdering::Delta(delta)).unwrap(),
+                        // End the game
+                        ServerAction::Quit => {pool.shutdown(); return},
+                    }
                 }
             }
 
-            // Update all actions in order and before the bot is allowed to select a decision.
 
 
-            // Run actions in the action_queue
-            {
-                let action_receiver = action_receiver.clone();
-                let (game_state, round_state, terminal_state, bot, player_index, socket) =
-                    (game_state.clone(), round_state.clone(), terminal_state.clone(), bot.clone(), player_index.clone(), self.socket.clone());
-                pool.execute(69, move || {
-                    let mut bot = Runner::lock_device(&bot, "bot");
-                    let action_queue = Runner::lock_device(&action_receiver, "actions");
-                    let mut game_state = Runner::poll_until_write(&game_state, "game");
-                    let mut round_state = Runner::poll_until_write(&round_state, "round");
-                    let mut terminal_state = Runner::poll_until_write(&terminal_state, "terminal");
-                    let player_index = player_index.load(PLAYER_INDEX_ORDERING);
-                    // We don't use it much, but we don't want writing code to run while we are here, so lock the socket
-                    let mut socket = Runner::lock_device(&socket, "socket");
-
-                    // Receive as many actions as possible, but don't block on it.
-                    while let Ok(action) = action_queue.try_recv() {
-                        debug_println!("[Runner] Running action {:?}", action);
-                        // make sure to clear the selected action. Repeatedly if we have testmod
-                        drop(socket.write_action.take());
-                        match action {
-                            PreservedOrdering::Action(act) => {
-                                if let Some(ref rs) = *round_state {
-                                    match rs.proceed(act) {
-                                        StateResult::Round(r) => *round_state = Some(r),
-                                        StateResult::Terminal(t) => {
-                                            *terminal_state = Some(t);
-                                            *round_state = None;
+            if state_change {
+                // Run actions in the action_queue
+                {
+                    // let barrier = barrier.clone();
+                    let action_receiver = action_receiver.clone();
+                    let (game_state, round_state, terminal_state, bot, player_index, socket) =
+                        (game_state.clone(), round_state.clone(), terminal_state.clone(), bot.clone(), player_index.clone(), self.socket.clone());
+                    pool.execute(69, move || {
+                        let mut round_state = Runner::poll_until_write(&round_state, "round");
+                        let mut game_state = Runner::poll_until_write(&game_state, "game");
+                        let mut terminal_state = Runner::poll_until_write(&terminal_state, "terminal");
+                        let mut bot = Runner::lock_device(&bot, "bot");
+                        let action_queue = Runner::lock_device(&action_receiver, "actions");
+                        // Receive as many actions as possible, but don't block on it.
+                        while let Ok(action) = action_queue.try_recv() {
+                            debug_println!("[Runner] Running action {:?}", action);
+                            match action {
+                                PreservedOrdering::Action(act) => {
+                                    if let Some(ref rs) = *round_state {
+                                        match rs.proceed(act) {
+                                            StateResult::Round(r) => *round_state = Some(r),
+                                            StateResult::Terminal(t) => {
+                                                *terminal_state = Some(t);
+                                            }
                                         }
+                                    } else {
+                                        panic!("Round state must exist for action {:?}", action);
                                     }
-                                } else {
-                                    panic!("Round state must exist for action {:?}", action);
-                                }
-                            },
-                            PreservedOrdering::Delta(delta) => {
-                                debug_println!("[Runner] Setting player deltas and ending round");
-                                assert!(terminal_state.is_some());
-                                if let Some(ref tstate) = *terminal_state {
-                                    let mut deltas = [-delta, -delta];
-                                    deltas[player_index] = delta;
-                                    let term = TerminalState{
-                                        deltas,
-                                        previous: tstate.previous.clone()
+                                },
+                                PreservedOrdering::Delta(delta) => {
+                                    debug_println!("[Runner] Setting player deltas and ending round");
+                                    assert!(terminal_state.is_some());
+                                    let player_index_ = player_index.load(PLAYER_INDEX_LOAD_ORDERING);
+                                    if let Some(ref tstate) = *terminal_state {
+                                        let mut deltas = [-delta, -delta];
+                                        deltas[player_index_] = delta;
+                                        let term = TerminalState{
+                                            deltas,
+                                            previous: tstate.previous.clone()
+                                        };
+                                        *game_state = GameState {
+                                            bankroll: game_state.bankroll + delta as i64,
+                                            game_clock: game_state.game_clock,
+                                            round_num: game_state.round_num
+                                        };
+                                        bot.handle_round_over(&*game_state, &term, player_index_);
+                                        *terminal_state = Some(term);
+                                        *game_state = GameState {
+                                            bankroll: game_state.bankroll,
+                                            game_clock: game_state.game_clock,
+                                            round_num: game_state.round_num + 1
+                                        };
+                                        *round_state = None;
+                                    }
+                                },
+                                PreservedOrdering::StartRound(hand) => {
+                                    let player_index_ = player_index.load(PLAYER_INDEX_LOAD_ORDERING);
+                                    let mut hands = [None, None];
+                                    hands[player_index_] = Some(hand);
+                                    let pips = [SMALL_BLIND, BIG_BLIND];
+                                    let stacks = [STARTING_STACK - SMALL_BLIND, STARTING_STACK - BIG_BLIND];
+                                    // debug_println!("[Runner] Setting player's hand and starting round");
+                                    let round = RoundState {
+                                        button: 0,
+                                        street: 0,
+                                        pips,
+                                        stacks,
+                                        hands,
+                                        deck: CardDeck(vec![]),
+                                        previous: None
                                     };
-                                    *game_state = GameState {
-                                        bankroll: game_state.bankroll + delta as i64,
-                                        game_clock: game_state.game_clock,
-                                        round_num: game_state.round_num
-                                    };
-                                    bot.handle_round_over(&*game_state, &term, player_index);
-                                    *terminal_state = Some(term);
-                                    *game_state = GameState {
-                                        bankroll: game_state.bankroll,
-                                        game_clock: game_state.game_clock,
-                                        round_num: game_state.round_num + 1
-                                    };
-                                    *round_state = None;
-                                }
-                            },
+                                    bot.handle_new_round(&*game_state, &round, player_index_);
+                                    *round_state = Some(round);
+                                },
+                                PreservedOrdering::Reveal(hand) => {
+                                    let player_index_ = player_index.load(PLAYER_INDEX_LOAD_ORDERING);
+                                    if let Some(ref prs) = *round_state {
+                                        let mut revised_hands = prs.hands;
+                                        revised_hands[1 - player_index_] = Some(hand);
+                                        // rebuild history
+                                        let new_round_state = RoundState {
+                                            button: prs.button,
+                                            street: prs.street,
+                                            pips: prs.pips,
+                                            stacks: prs.stacks,
+                                            hands: revised_hands,
+                                            deck: prs.deck.clone(),
+                                            previous: prs.previous.clone()
+                                        };
+                                        *terminal_state = Some(TerminalState{
+                                            deltas: [0, 0],
+                                            previous: new_round_state
+                                        });
+                                    } else {
+                                        panic!("Round state must exists for reveal")
+                                    }
+                                },
+                                PreservedOrdering::UpdateDeck(deck) => {
+                                    if let Some(ref rs) = *round_state {
+                                        *round_state = Some(RoundState {
+                                            button: rs.button,
+                                            street: deck.0.len() as u32,
+                                            pips: rs.pips,
+                                            stacks: rs.stacks,
+                                            hands: rs.hands,
+                                            deck,
+                                            previous: rs.previous.clone()
+                                        })
+                                    } else {
+                                        panic!("Round state must exist for this action")
+                                    }
+                                },
+                                PreservedOrdering::SetPlayerIndex(index) => {
+                                    player_index.store(index, PLAYER_INDEX_STOR_ORDERING)
+                                },
+                            }
                         }
-                    }
-                })
-            }
 
-            // Determine what we want to write, or just ack the server
-            {
-                // let (socket, player_index) = (self.socket.clone(), player_index.clone());
-                // let (round_state, bot, game_state) = (round_state.clone(), bot.clone(), game_state.clone());
-                // Lock the socket so we write before we read.
-                let socket = self.socket.clone();
-                let (game_state, round_state, bot, player_index) = (game_state.clone(), round_state.clone(), bot.clone(), player_index.clone());
-                pool.execute(9, move || {
-                    // Acquire the round state if it is available, but DO NOT BLOCK ( but maybe block the socket for a bit... )
-                    // let mut socket = socket.lock().unwrap();
-                    let mut socket = Runner::lock_device(&socket, "socket");
-                    let round_state = Runner::poll_until_read(&round_state, "round");
-                    let game_state = Runner::poll_until_read(&game_state, "game");
-                    // Check if there even is a round state
-                    if let Some(ref round_state) = *round_state {
-                        // Clone the current copy of round state
-                        let player_index = player_index.load(PLAYER_INDEX_ORDERING);
-                        assert!(player_index == round_state.button as usize % 2);
-                        // if we can make an action, do so, unless we already have done so.
-                        if socket.write_action.is_none() {
-                            let mut bot = Runner::lock_device(&bot, "bot");
-                            let bot_action = bot.get_action(&*game_state, round_state, player_index);
-                            let legal_actions = round_state.legal_actions();
-                            // Coerce the action to the next best action
-                            let action = match bot_action {
-                                Action::Raise(raise) => if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
-                                    let [rb_min, rb_max] = round_state.raise_bounds();
-                                    if raise > rb_min && raise < rb_max {
-                                        Action::Raise(raise)
+                        //barrier.wait();
+                    })
+                }
+                {
+                    let socket = self.socket.clone();
+                    // let barrier = barrier.clone();
+                    let (game_state, round_state, bot, player_index) = (game_state.clone(), round_state.clone(), bot.clone(), player_index.clone());
+                    pool.execute(9, move || {
+                        // Acquire the round state if it is available, but DO NOT BLOCK ( but maybe block the socket for a bit... )
+                        // let mut socket = socket.lock().unwrap();
+                        //barrier.wait();
+                        let mut socket = Runner::lock_device(&socket, "socket");
+                        let round_state = Runner::poll_until_read(&round_state, "round");
+                        let game_state = Runner::poll_until_read(&game_state, "game");
+                        // We haven't tried to send anything
+
+
+                        if let Some(ref round_state) = *round_state {
+                            let player_index = player_index.load(PLAYER_INDEX_LOAD_ORDERING);
+                            assert!(player_index == round_state.button as usize % 2);
+                            // if we can make an action, do so, unless we already have done so.
+                            if !socket.round_sent.load(Ordering::SeqCst) {
+                                socket.round_sent.store(true, Ordering::Relaxed);
+                                let mut bot = Runner::lock_device(&bot, "bot");
+                                let bot_action = bot.get_action(&*game_state, round_state, player_index);
+                                let legal_actions = round_state.legal_actions();
+                                let action = match bot_action {
+                                    Action::Raise(raise) => if (legal_actions & ActionType::RAISE) == ActionType::RAISE {
+                                        let [rb_min, rb_max] = round_state.raise_bounds();
+                                        if raise > rb_min && raise < rb_max {
+                                            Action::Raise(raise)
+                                        } else {
+                                            if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                                Action::Check
+                                            } else {
+                                                Action::Call
+                                            }
+                                        }
                                     } else {
                                         if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
                                             Action::Check
                                         } else {
                                             Action::Call
                                         }
-                                    }
-                                } else {
-                                    if(legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                    },
+                                    Action::Check => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                        Action::Check
+                                    } else {
+                                        Action::Fold
+                                    },
+                                    Action::Call => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
                                         Action::Check
                                     } else {
                                         Action::Call
+                                    },
+                                    Action::Fold => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
+                                        Action::Check
+                                    } else {
+                                        Action::Fold
                                     }
-                                },
-                                Action::Check => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
-                                    Action::Check
-                                } else {
-                                    Action::Fold
-                                },
-                                Action::Call => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
-                                    Action::Check
-                                } else {
-                                    Action::Call
-                                },
-                                Action::Fold => if (legal_actions & ActionType::CHECK) == ActionType::CHECK {
-                                    Action::Check
-                                } else {
-                                    Action::Fold
-                                }
-                            };
-                            if bot_action != action {
-                                println!("[Runner] Coerced {:?} into {:?}. Check bot for error.", bot_action, action);
+                                };
+                                socket.send(action);
                             }
-                            socket.send(action);
+                        } else {
+                            if !socket.round_sent.load(Ordering::SeqCst) {
+                                socket.round_sent.store(true, Ordering::SeqCst);
+                                socket.ping();
+                            }
                         }
-                    }
-                });
+                    });
+                }
+            }
+
+            state_change = false;
+
+            // Check of we timed out before letting anything lock or poll_until_write
+            {
+                let game_state = Runner::poll_until_read(&game_state, "game");
+                let round_state = Runner::poll_until_read(&round_state, "round");
+                if (relative_eq!(game_state.game_clock, 0.0, epsilon = 0.001)  && game_state.round_num > 1)
+                    || Instant::now() - self.runner_start > Duration::from_secs(COMP_TIME)
+                    || game_state.round_num == 1001 && round_state.is_none() {
+                    debug_println!("Game over. Check for errors.");
+                    return;
+                }
             }
 
             // Let the computer rest for a bit
-            thread::sleep(Duration::from_millis(SLEEP_DURATION));
+            thread::sleep(Duration::from_micros(SLEEP_DURATION));
         }
     }
 }

@@ -78,7 +78,7 @@ package-build must-pass +FLAGS='': (_select-cargo package-mode) (_copy-files pac
         timeout -k 2s {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build;
         check_errs $? 124 "Build timed out.";
     else
-        timeout --preserve-status -s 9 {{build-timeout}} just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build || true;
+        time -p just -d . --justfile justfile mode={{run-mode}} build-flags='$BUILD_FLAGS' build || true;
     fi
 
 

@@ -14,9 +14,11 @@ export CARGO_INCREMENTAL := "0"
 # Build using specified local mode in 10 seconds, then kill the process
 @build: (_package-complete)
     if [ {{mode}} = release ]; then \
-        cargo build --offline --frozen -q --release -p tinyrasputin --lib; \
+        cargo check --offline --frozen -q --release -p tinyrasputin; \
+        cargo build --offline --frozen -q --release -p tinyrasputin; \
     else \
-        cargo build --offline --frozen -p tinyrasputin --lib --features debug_print; \
+        cargo check --offline --frozen -p tinyrasputin --features debug_print; \
+        cargo build --offline --frozen -p tinyrasputin --features debug_print; \
     fi
 
 @test +FLAGS='': (build)

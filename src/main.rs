@@ -7,7 +7,7 @@ use std::net::Ipv4Addr;
 use std::path::Path;
 use std::convert::AsRef;
 
-const THREAD_COUNT: usize = 2;
+const THREAD_COUNT: usize = 1;
 
 #[cfg(debug_assertions)]
 fn analyze_mode<P: AsRef<Path>>(path: P) -> std::io::Result<()> {
